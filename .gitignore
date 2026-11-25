@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Next.js build
+frontend/.next/
+frontend/out/
+frontend/build/
+.next/
+
+# Go binaries and build
+backend/bin/
+backend/tmp/
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+
+# AI Agent & Harness configuration (Do not push)
+.agent/
+.agents/
+.gemini/
+.impeccable/
+
+# HTML prototype files (Do not push)
+*.html
+frontend/*.html
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
