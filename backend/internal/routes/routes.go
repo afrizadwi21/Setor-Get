@@ -28,6 +28,7 @@ func SetupRoutes(app *fiber.App) {
 	// Profile & User Settings
 	protected.Get("/auth/me", handlers.GetMe)
 	protected.Put("/auth/username", handlers.UpdateUsername)
+	protected.Put("/auth/profile", handlers.UpdateProfile)
 	protected.Put("/auth/password", handlers.ChangePassword)
 	protected.Put("/auth/avatar", handlers.UpdateAvatar)
 	protected.Post("/auth/agree-tnc", handlers.AgreeTNC)
@@ -56,4 +57,18 @@ func SetupRoutes(app *fiber.App) {
 	// Notifications
 	protected.Get("/notifications", handlers.GetNotifications)
 	protected.Put("/notifications/read-all", handlers.MarkNotificationsRead)
+
+	// Admin Only Routes
+	admin := protected.Group("/admin", middleware.AdminRequired)
+	admin.Get("/submissions", handlers.AdminGetSubmissions)
+	admin.Post("/submissions", handlers.AdminCreateSubmission)
+	admin.Put("/submissions/:id", handlers.AdminUpdateSubmission)
+	admin.Delete("/submissions/:id", handlers.AdminDeleteSubmission)
+	admin.Put("/submissions/:id/status", handlers.AdminUpdateSubmissionStatus)
+	admin.Get("/submissions/export", handlers.AdminExportSubmissionsCSV)
+	admin.Get("/chats", handlers.AdminGetChats)
+	admin.Get("/chats/:userId", handlers.AdminGetUserChat)
+	admin.Post("/chats/:userId", handlers.AdminReplyChat)
+	admin.Get("/withdrawals", handlers.AdminGetWithdrawals)
+	admin.Put("/withdrawals/:id/status", handlers.AdminUpdateWithdrawalStatus)
 }

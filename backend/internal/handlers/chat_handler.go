@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"strings"
-	"time"
 
 	"backend/internal/database"
 	"backend/internal/models"
@@ -21,11 +20,10 @@ func GetChatMessages(c *fiber.Ctx) error {
 	database.DB.Where("user_id = ?", user.ID).Order("created_at asc").Find(&msgs)
 
 	if len(msgs) == 0 {
-		// Welcome default message from admin
 		msgs = append(msgs, models.ChatMessage{
 			UserID:    user.ID,
 			Sender:    "a",
-			Message:   "Halo! Ada kendala saat setor atau tarik saldo? Tulis di sini ya.",
+			Message:   "Halo! Ada kendala saat setor atau tarik saldo? Tulis di sini ya, admin akan membalas.",
 			CreatedAt: user.CreatedAt,
 		})
 	}
@@ -54,19 +52,8 @@ func SendChatMessage(c *fiber.Ctx) error {
 	}
 	database.DB.Create(&userMsg)
 
-	// Auto-reply from admin in goroutine
-	go func(uID uint) {
-		time.Sleep(1 * time.Second)
-		adminMsg := models.ChatMessage{
-			UserID:  uID,
-			Sender:  "a",
-			Message: "Terima kasih, pesan kamu sudah masuk. Admin akan membalas secepatnya.",
-		}
-		database.DB.Create(&adminMsg)
-	}(user.ID)
-
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"message": "Pesan terkirim",
+		"message": "Pesan terkirim ke admin",
 		"data":    userMsg,
 	})
 }

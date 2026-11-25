@@ -21,8 +21,16 @@ type Config struct {
 }
 
 func LoadConfig() *Config {
-	if err := godotenv.Load(".env", "backend/.env", "../.env"); err != nil {
-		log.Println("No .env file found or using environment variables")
+	loaded := false
+	for _, p := range []string{".env", "backend/.env", "../.env"} {
+		if err := godotenv.Load(p); err == nil {
+			log.Printf("Loaded environment from %s\n", p)
+			loaded = true
+			break
+		}
+	}
+	if !loaded {
+		log.Println("No .env file found, using system environment variables")
 	}
 
 	return &Config{

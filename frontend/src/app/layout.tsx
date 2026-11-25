@@ -24,9 +24,9 @@ const reading = Literata({
 });
 
 export const metadata: Metadata = {
-  title: "Setor Gmail — Setiap Gmail yang lolos dibayar Rp2.500",
+  title: "StorGet — Setiap Gmail yang lolos dibayar Rp2.500",
   description:
-    "Setor Gmail berawalan get, pantau statusnya dari Pending sampai Diterima, lalu tarik saldo ke DANA, OVO, GoPay, atau rekening bank mulai Rp25.000.",
+    "StorGet: setor Gmail berawalan get, pantau statusnya dari Pending sampai Diterima, lalu tarik saldo ke DANA, OVO, GoPay, atau rekening bank mulai Rp5.000.",
 };
 
 export const viewport: Viewport = {

@@ -19,8 +19,8 @@ export default function Landing() {
       </a>
 
       <header className="wrap masthead">
-        <Link className="brand" href="/" aria-label="Setor Gmail, beranda">
-          setor gmail<span className="brand-dot">.</span>
+        <Link className="brand" href="/" aria-label="StorGet, beranda">
+          storget<span className="brand-dot">.</span>
         </Link>
         <nav className="nav-links" aria-label="Navigasi utama">
           <a href="#cara">Cara kerja</a>
@@ -314,13 +314,13 @@ export default function Landing() {
       </main>
 
       <footer className="site-footer wrap">
-        <Link className="brand" href="/" aria-label="Setor Gmail, kembali ke atas">
-          setor gmail<span className="brand-dot">.</span>
+        <Link className="brand" href="/" aria-label="StorGet, kembali ke atas">
+          storget<span className="brand-dot">.</span>
         </Link>
         <p className="footer-message">Tidak berafiliasi dengan Google.</p>
         <div className="footer-end">
           <a href="#ketentuan">Syarat &amp; Ketentuan</a>
-          <span>© 2026 Setor Gmail</span>
+          <span>© 2026 StorGet</span>
         </div>
       </footer>
     </>

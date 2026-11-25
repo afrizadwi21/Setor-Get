@@ -11,12 +11,16 @@ import (
 )
 
 type RegisterRequest struct {
+	Email    string `json:"email"`
 	Username string `json:"username"`
+	FullName string `json:"full_name"`
+	Phone    string `json:"phone"`
 	Password string `json:"password"`
 	RefCode  string `json:"ref_code"`
 }
 
 type LoginRequest struct {
+	Email    string `json:"email"`
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
@@ -28,6 +32,12 @@ type GoogleLoginRequest struct {
 }
 
 func Register(c *fiber.Ctx) error {
+	if database.DB == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "Database tidak tersedia. Silakan coba lagi nanti.",
+		})
+	}
+
 	var req RegisterRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -35,10 +45,12 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.Username = strings.TrimSpace(req.Username)
-	if len(req.Username) < 3 {
+
+	if req.Email == "" || !strings.Contains(req.Email, "@") {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Username minimal 3 karakter",
+			"error": "Masukkan alamat email yang valid",
 		})
 	}
 
@@ -48,12 +60,34 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
-	// Check if username taken
-	var existing models.User
-	if err := database.DB.Where("LOWER(username) = LOWER(?)", req.Username).First(&existing).Error; err == nil {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-			"error": "Username sudah digunakan",
+	// Derive clean username from email if not provided (never show full email as username)
+	if req.Username == "" || strings.Contains(req.Username, "@") {
+		localPart := strings.Split(req.Email, "@")[0]
+		localPart = strings.Split(localPart, ".")[0]
+		if len(localPart) < 3 {
+			localPart = strings.Split(req.Email, "@")[0]
+		}
+		req.Username = strings.Title(strings.ToLower(localPart))
+	}
+
+	if len(req.Username) < 3 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Username minimal 3 karakter",
 		})
+	}
+
+	// Check if email already registered
+	var existingEmail models.User
+	if err := database.DB.Where("LOWER(email) = LOWER(?)", req.Email).First(&existingEmail).Error; err == nil {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"error": "Email sudah terdaftar. Silakan masuk.",
+		})
+	}
+
+	// Ensure username uniqueness
+	var existingUser models.User
+	if err := database.DB.Where("LOWER(username) = LOWER(?)", req.Username).First(&existingUser).Error; err == nil {
+		req.Username = req.Username + "_" + strings.ToLower(utils.GenerateRandomCode(3))
 	}
 
 	hash, err := utils.HashPassword(req.Password)
@@ -64,7 +98,10 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	user := models.User{
+		Email:        req.Email,
 		Username:     req.Username,
+		FullName:     strings.TrimSpace(req.FullName),
+		Phone:        strings.TrimSpace(req.Phone),
 		PasswordHash: hash,
 		ReferralCode: strings.ToUpper(utils.GenerateRandomCode(8)),
 		DailyLimit:   20,
@@ -112,6 +149,12 @@ func Register(c *fiber.Ctx) error {
 }
 
 func Login(c *fiber.Ctx) error {
+	if database.DB == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "Database tidak tersedia. Silakan coba lagi nanti.",
+		})
+	}
+
 	var req LoginRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -119,37 +162,27 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 
-	req.Username = strings.TrimSpace(req.Username)
-	if req.Username == "" || len(req.Password) < 6 {
+	identifier := strings.TrimSpace(req.Email)
+	if identifier == "" {
+		identifier = strings.TrimSpace(req.Username)
+	}
+	if identifier == "" || len(req.Password) < 6 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Isi username dan kata sandi (min. 6 karakter)",
+			"error": "Isi email dan kata sandi (min. 6 karakter)",
 		})
 	}
 
 	var user models.User
-	if err := database.DB.Where("LOWER(username) = LOWER(?)", req.Username).First(&user).Error; err != nil {
-		// Auto-register convenience if user doesn't exist (matching behavior in html where login/daftar works directly)
-		hash, err := utils.HashPassword(req.Password)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal proses login"})
-		}
-		user = models.User{
-			Username:     req.Username,
-			PasswordHash: hash,
-			ReferralCode: strings.ToUpper(utils.GenerateRandomCode(8)),
-			DailyLimit:   20,
-		}
-		if err := database.DB.Create(&user).Error; err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Username atau kata sandi salah",
-			})
-		}
-	} else {
-		if !utils.CheckPasswordHash(req.Password, user.PasswordHash) {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Kata sandi salah",
-			})
-		}
+	if err := database.DB.Where("LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)", identifier, identifier).First(&user).Error; err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "Akun dengan email tersebut tidak ditemukan. Silakan daftar terlebih dahulu.",
+		})
+	}
+
+	if !utils.CheckPasswordHash(req.Password, user.PasswordHash) {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "Email atau kata sandi salah.",
+		})
 	}
 
 	token, err := utils.GenerateToken(user.ID, user.Username)
@@ -167,6 +200,12 @@ func Login(c *fiber.Ctx) error {
 }
 
 func GoogleLogin(c *fiber.Ctx) error {
+	if database.DB == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "Database tidak tersedia. Silakan coba lagi nanti.",
+		})
+	}
+
 	var req GoogleLoginRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -333,6 +372,40 @@ func UpdateAvatar(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "Avatar berhasil diperbarui",
 		"avatar":  user.Avatar,
+	})
+}
+
+type UpdateProfileRequest struct {
+	FullName string `json:"full_name"`
+	Phone    string `json:"phone"`
+	Email    string `json:"email"`
+}
+
+func UpdateProfile(c *fiber.Ctx) error {
+	user := c.Locals("user").(*models.User)
+	var req UpdateProfileRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid body"})
+	}
+
+	if e := strings.ToLower(strings.TrimSpace(req.Email)); e != "" {
+		if !strings.Contains(e, "@") {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format email tidak valid"})
+		}
+		var existing models.User
+		if err := database.DB.Where("LOWER(email) = LOWER(?) AND id <> ?", e, user.ID).First(&existing).Error; err == nil {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Email sudah digunakan akun lain"})
+		}
+		user.Email = e
+	}
+
+	user.FullName = strings.TrimSpace(req.FullName)
+	user.Phone = strings.TrimSpace(req.Phone)
+	database.DB.Save(user)
+
+	return c.JSON(fiber.Map{
+		"message": "Info pribadi berhasil diperbarui.",
+		"user":    user,
 	})
 }
 

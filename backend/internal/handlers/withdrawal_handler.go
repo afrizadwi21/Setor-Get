@@ -37,30 +37,29 @@ func RequestWithdrawal(c *fiber.Ctx) error {
 		})
 	}
 
+	// Check pending withdrawals so user cannot double-withdraw before admin marks Done
+	var pendingTotal int64
+	database.DB.Model(&models.Withdrawal{}).
+		Where("user_id = ? AND status = ?", user.ID, models.WithdrawalPending).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&pendingTotal)
+
+	availableBalance := user.Balance - pendingTotal
 	amount := req.Amount
 	if amount <= 0 {
-		amount = user.Balance
+		amount = availableBalance
 	}
 
 	const minWithdrawal = 5000
-	if user.Balance < minWithdrawal || amount < minWithdrawal {
+	if availableBalance < minWithdrawal || amount < minWithdrawal {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Saldo minimal Rp5.000 untuk melakukan penarikan.",
+			"error": "Saldo tersedia minimal Rp5.000 (atau masih ada penarikan pending).",
 		})
 	}
 
-	if amount > user.Balance {
+	if amount > availableBalance {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Jumlah penarikan melebihi saldo yang dimiliki.",
-		})
-	}
-
-	// Deduct balance and update TotalWD
-	user.Balance -= amount
-	user.TotalWD += amount
-	if err := database.DB.Save(user).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Gagal memproses saldo penarikan",
+			"error": "Jumlah penarikan melebihi saldo yang tersedia.",
 		})
 	}
 
@@ -71,16 +70,20 @@ func RequestWithdrawal(c *fiber.Ctx) error {
 		Amount:        amount,
 		Status:        models.WithdrawalPending,
 	}
-	database.DB.Create(&wd)
+	if err := database.DB.Create(&wd).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Gagal mengajukan penarikan",
+		})
+	}
 
 	database.DB.Create(&models.Notification{
 		UserID:  user.ID,
 		Title:   "Penarikan Diajukan",
-		Message: fmt.Sprintf("Penarikan Rp%s diajukan ke %s (%s).", formatIDR(amount), req.Method, req.AccountNumber),
+		Message: fmt.Sprintf("Penarikan Rp%s diajukan ke %s (%s). Menunggu proses admin.", formatIDR(amount), req.Method, req.AccountNumber),
 	})
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"message": "Penarikan berhasil diajukan",
+		"message": "Penarikan berhasil diajukan dan menunggu konfirmasi admin",
 		"data":    wd,
 		"balance": user.Balance,
 	})

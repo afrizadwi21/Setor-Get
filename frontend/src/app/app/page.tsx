@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import React, { useMemo, useState } from "react";
-import ThemeToggle from "../ThemeToggle";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { apiRequest, API_BASE, clearToken, getToken, setToken } from "@/lib/api";
 import {
-  CHECKER_RULE,
   DAILY_LIMIT,
   EMAIL_RULE,
   MIN_WITHDRAW,
@@ -14,6 +13,7 @@ import {
   REF_TARGET,
   rp,
 } from "@/lib/setor";
+import ThemeToggle from "../ThemeToggle";
 
 type Tab =
   | "home"
@@ -24,38 +24,109 @@ type Tab =
   | "profil"
   | "ref"
   | "lb"
-  | "tnc";
+  | "tnc"
+  | "admin";
 
 type SubStatus = "ok" | "pend" | "bad" | "chk";
 
+interface ApiUser {
+  id: number;
+  email: string;
+  username: string;
+  full_name: string;
+  phone: string;
+  avatar: string;
+  balance: number;
+  total_wd: number;
+  daily_limit: number;
+  referral_code: string;
+  agreed_tnc: boolean;
+  role: string;
+}
+
+interface AdminSubmission {
+  id: number;
+  user_id: number;
+  username: string;
+  email: string;
+  email_pass: string;
+  status: SubStatus;
+  reward_amount: number;
+  reason: string;
+  created_at: string;
+}
+
+interface AdminChatThread {
+  user_id: number;
+  username: string;
+  last_message: string;
+  last_sender: string;
+  updated_at: string;
+}
+
+interface WithdrawalItem {
+  id: number;
+  user_id?: number;
+  username?: string;
+  email?: string;
+  method: string;
+  account_number: string;
+  amount: number;
+  status: "pending" | "approved" | "rejected";
+  user_wd_count?: number;
+  user_wd_total?: number;
+  created_at: string;
+}
+
+interface AdminUserWDStat {
+  user_id: number;
+  username: string;
+  email: string;
+  wd_count: number;
+  wd_total: number;
+  balance: number;
+}
+
 interface Submission {
-  id: string;
+  id: number;
   email: string;
   status: SubStatus;
-  at: string;
+  created_at: string;
   reason?: string;
 }
 
 interface Notif {
-  id: string;
-  text: string;
-  at: string;
-  unread: boolean;
+  id: number;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
 }
 
 interface RefFriend {
-  name: string;
-  ok: boolean;
+  username: string;
+  is_successful: boolean;
 }
 
 interface RefBonusItem {
+  id: number;
   title: string;
   amount: number;
 }
 
+interface LeaderboardRow {
+  rank: number;
+  username: string;
+  total_wd: number;
+  wd_count: number;
+  accepted_count: number;
+  is_me: boolean;
+}
+
 interface ChatMsg {
+  id?: number;
   sender: "u" | "a";
-  text: string;
+  message: string;
 }
 
 function TabIcon({ id }: { id: Tab }) {
@@ -115,20 +186,35 @@ const STATUS_META: Record<SubStatus, { cls: string; label: string }> = {
   chk: { cls: "t-chk", label: "Di cek" },
 };
 
+function formatTime(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+}
+
 export default function AppWorkspace() {
   const router = useRouter();
+  const [booting, setBooting] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [loginUser, setLoginUser] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [regUsername, setRegUsername] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [loginErr, setLoginErr] = useState("");
 
   const [tab, setTab] = useState<Tab>("home");
   const [user, setUser] = useState("");
-  const [userPass, setUserPass] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [role, setRole] = useState("user");
   const [avatar, setAvatar] = useState("");
   const [bal, setBal] = useState(0);
   const [wdTotal, setWdTotal] = useState(0);
+  const [dailyLimit, setDailyLimit] = useState(DAILY_LIMIT);
+  const [todayCount, setTodayCount] = useState(0);
   const [agreed, setAgreed] = useState(false);
 
   const [notifs, setNotifs] = useState<Notif[]>([]);
@@ -138,25 +224,37 @@ export default function AppWorkspace() {
   const [storEmail, setStorEmail] = useState("");
   const [storPass, setStorPass] = useState("");
   const [storErr, setStorErr] = useState("");
+  const [storBusy, setStorBusy] = useState(false);
 
   const [checkRaw, setCheckRaw] = useState("");
+  const [checkBusy, setCheckBusy] = useState(false);
   const [checkRes, setCheckRes] = useState<
     { email: string; cls: string; label: string }[]
   >([]);
 
   const [wdMethod, setWdMethod] = useState("DANA");
   const [wdNumber, setWdNumber] = useState("");
+  const [wdBusy, setWdBusy] = useState(false);
   const [wdErr, setWdErr] = useState("");
   const [wdOk, setWdOk] = useState("");
+  const [withdrawals, setWithdrawals] = useState<WithdrawalItem[]>([]);
 
-  const [refCode, setRefCode] = useState("SETOR88A");
+  const [refCode, setRefCode] = useState("");
+  const [refLink, setRefLink] = useState("");
   const [refTab, setRefTab] = useState<1 | 2>(1);
   const [refList, setRefList] = useState<RefFriend[]>([]);
   const [refBonuses, setRefBonuses] = useState<RefBonusItem[]>([]);
+  const [refSuccessCount, setRefSuccessCount] = useState(0);
+  const [refTotalBonus, setRefTotalBonus] = useState(0);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const [lbRows, setLbRows] = useState<LeaderboardRow[]>([]);
 
   const [newUsername, setNewUsername] = useState("");
   const [nameMsg, setNameMsg] = useState<{ text: string; ok: boolean } | null>(
+    null
+  );
+  const [profileMsg, setProfileMsg] = useState<{ text: string; ok: boolean } | null>(
     null
   );
   const [oldPass, setOldPass] = useState("");
@@ -168,33 +266,134 @@ export default function AppWorkspace() {
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([
-    {
-      sender: "a",
-      text: "Halo! Ada kendala saat setor atau tarik saldo? Tulis di sini ya.",
-    },
-  ]);
+  const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
 
-  const notify = (text: string) => {
-    const at = new Date().toLocaleTimeString("id-ID", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    setNotifs((prev) => [
-      { id: Math.random().toString(36).slice(2), text, at, unread: true },
-      ...prev,
+  // Admin state
+  const [adminSubTab, setAdminSubTab] = useState<"subs" | "wd" | "chats" | "lb">("subs");
+  const [adminFilter, setAdminFilter] = useState<string>("all");
+  const [adminWdFilter, setAdminWdFilter] = useState<string>("all");
+  const [adminSubs, setAdminSubs] = useState<AdminSubmission[]>([]);
+  const [adminWds, setAdminWds] = useState<WithdrawalItem[]>([]);
+  const [adminUserWDStats, setAdminUserWDStats] = useState<AdminUserWDStat[]>([]);
+  const [adminReasonMap, setAdminReasonMap] = useState<Record<number, string>>({});
+  const [adminEditMap, setAdminEditMap] = useState<Record<number, { email: string; email_pass: string }>>({});
+  const [adminNewEmail, setAdminNewEmail] = useState("");
+  const [adminNewPass, setAdminNewPass] = useState("");
+  const [adminThreads, setAdminThreads] = useState<AdminChatThread[]>([]);
+  const [adminActiveUserId, setAdminActiveUserId] = useState<number | null>(null);
+  const [adminChatMsgs, setAdminChatMsgs] = useState<ChatMsg[]>([]);
+  const [adminReplyInput, setAdminReplyInput] = useState("");
+
+  const loadAdminData = useCallback(async (filter = "all", wdFilter = "all") => {
+    const [subsRes, chatsRes, wdRes, lbRes] = await Promise.all([
+      apiRequest<{ data: AdminSubmission[] }>(`/admin/submissions?status=${filter}`),
+      apiRequest<{ threads: AdminChatThread[] | null }>("/admin/chats"),
+      apiRequest<{ data: WithdrawalItem[] | null; user_stats: AdminUserWDStat[] | null }>(
+        `/admin/withdrawals?status=${wdFilter}`
+      ),
+      apiRequest<{ leaderboard: LeaderboardRow[] }>("/leaderboard"),
     ]);
-  };
+    setAdminSubs(subsRes.data || []);
+    setAdminThreads(chatsRes.threads || []);
+    setAdminWds(wdRes.data || []);
+    setAdminUserWDStats(wdRes.user_stats || []);
+    setLbRows(lbRes.leaderboard || []);
+  }, []);
+
+  const hydrateAll = useCallback(async () => {
+    const [sum, subs, notifRes, refRes, lbRes, chatRes, wdRes] = await Promise.all([
+      apiRequest<{
+        balance: number;
+        limit: number;
+        today_count: number;
+        user: ApiUser;
+      }>("/dashboard/summary"),
+      apiRequest<{ data: Submission[] }>("/submissions"),
+      apiRequest<{ notifications: Notif[] }>("/notifications"),
+      apiRequest<{
+        code: string;
+        invite_link: string;
+        successful_count: number;
+        total_bonus: number;
+        referred_users: RefFriend[] | null;
+        bonus_history: RefBonusItem[] | null;
+      }>("/referrals"),
+      apiRequest<{ leaderboard: LeaderboardRow[] }>("/leaderboard"),
+      apiRequest<{ messages: ChatMsg[] }>("/chat"),
+      apiRequest<{ data: WithdrawalItem[] | null }>("/withdrawals"),
+    ]);
+
+    setUser(sum.user.username);
+    setUserEmail(sum.user.email || "");
+    setFullName(sum.user.full_name || "");
+    setPhone(sum.user.phone || "");
+    setRole(sum.user.role || "user");
+    setAvatar(sum.user.avatar || "");
+    setBal(sum.balance);
+    setWdTotal(sum.user.total_wd || 0);
+    setDailyLimit(sum.limit || DAILY_LIMIT);
+    setTodayCount(sum.today_count || 0);
+    setAgreed(sum.user.agreed_tnc);
+
+    if (sum.user.role === "admin") {
+      loadAdminData(adminFilter, adminWdFilter).catch(() => {});
+    }
+
+    setItems(subs.data || []);
+    setNotifs(notifRes.notifications || []);
+
+    setRefCode(refRes.code || sum.user.referral_code || "");
+    setRefLink(refRes.invite_link || "");
+    setRefList(refRes.referred_users || []);
+    setRefBonuses(refRes.bonus_history || []);
+    setRefSuccessCount(refRes.successful_count || 0);
+    setRefTotalBonus(refRes.total_bonus || 0);
+
+    setLbRows(lbRes.leaderboard || []);
+    setChatMsgs(chatRes.messages || []);
+    setWithdrawals(wdRes.data || []);
+    return sum.user;
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    async function restoreSession() {
+      const token = getToken();
+      if (!token) {
+        if (active) setBooting(false);
+        return;
+      }
+      try {
+        const u = await hydrateAll();
+        if (!active) return;
+        setLoggedIn(true);
+        if (u.role === "admin") {
+          setTab("admin");
+        } else if (!u.agreed_tnc) {
+          setTab("tnc");
+        }
+      } catch {
+        clearToken();
+        if (active) setLoggedIn(false);
+      } finally {
+        if (active) setBooting(false);
+      }
+    }
+    void restoreSession();
+    return () => {
+      active = false;
+    };
+  }, [hydrateAll]);
 
   const unreadCount = useMemo(
-    () => notifs.filter((n) => n.unread).length,
+    () => notifs.filter((n) => !n.is_read).length,
     [notifs]
   );
 
   const counts = useMemo(() => {
     const c = { ok: 0, pend: 0, bad: 0, chk: 0 };
     items.forEach((i) => {
-      c[i.status]++;
+      if (c[i.status] !== undefined) c[i.status]++;
     });
     return c;
   }, [items]);
@@ -203,7 +402,7 @@ export default function AppWorkspace() {
     const e = storEmail.trim().toLowerCase();
     const fmtOk = EMAIL_RULE.test(e);
     const passOk = storPass.length >= 8;
-    const uniqueOk = !items.some((i) => i.email === e);
+    const uniqueOk = !items.some((i) => i.email.toLowerCase() === e);
     return {
       e,
       fmtOk,
@@ -214,44 +413,77 @@ export default function AppWorkspace() {
     };
   }, [storEmail, storPass, items]);
 
-  const handleLogin = (ev: React.FormEvent) => {
+  const handleLogin = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const u = loginUser.trim();
-    if (!u || loginPass.length < 6) {
-      setLoginErr("Isi username dan kata sandi (min. 6 karakter).");
+    const em = loginEmail.trim().toLowerCase();
+    if (!em || !em.includes("@") || loginPass.length < 6) {
+      setLoginErr("Isi alamat email yang valid dan kata sandi (min. 6 karakter).");
       return;
     }
+
+    setAuthBusy(true);
     setLoginErr("");
-    setUser(u);
-    setUserPass(loginPass);
-    setRefCode(Math.random().toString(36).slice(2, 10).toUpperCase());
-    setLoggedIn(true);
-    notify(`Selamat datang, ${u}. Harga per Gmail ${rp(PRICE)}.`);
-    if (!agreed) {
-      notify("Baca Syarat & Ketentuan sebelum menyetor.");
-      setTab("tnc");
-    } else {
-      setTab("home");
+    try {
+      const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
+      const payload =
+        authMode === "login"
+          ? { email: em, password: loginPass }
+          : { email: em, username: regUsername.trim(), password: loginPass };
+
+      const res = await apiRequest<{ token: string; user: ApiUser }>(endpoint, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setToken(res.token);
+      const loadedUser = await hydrateAll();
+      setLoggedIn(true);
+      setLoginPass("");
+      if (loadedUser.role === "admin") {
+        setTab("admin");
+      } else {
+        setTab(loadedUser.agreed_tnc ? "home" : "tnc");
+      }
+    } catch (err) {
+      clearToken();
+      setLoggedIn(false);
+      setLoginErr(err instanceof Error ? err.message : "Gagal masuk.");
+    } finally {
+      setAuthBusy(false);
     }
   };
 
-  const handleGoogleLogin = () => {
-    const googleUser = "google_user";
+  const handleGoogleLogin = async () => {
+    setAuthBusy(true);
     setLoginErr("");
-    setUser(googleUser);
-    setUserPass("google-oauth-session");
-    setRefCode(Math.random().toString(36).slice(2, 10).toUpperCase());
-    setLoggedIn(true);
-    notify(`Masuk lewat Google sebagai ${googleUser}. Harga per Gmail ${rp(PRICE)}.`);
-    if (!agreed) {
-      notify("Baca & setujui Syarat & Ketentuan sebelum menyetor.");
-      setTab("tnc");
-    } else {
-      setTab("home");
+    try {
+      const res = await apiRequest<{ token: string; user: ApiUser }>(
+        "/auth/google",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email: "pengguna.google@gmail.com",
+            name: "pengguna_google",
+            avatar: "",
+          }),
+        }
+      );
+
+      setToken(res.token);
+      const loadedUser = await hydrateAll();
+      setLoggedIn(true);
+      setTab(loadedUser.agreed_tnc ? "home" : "tnc");
+    } catch (err) {
+      clearToken();
+      setLoggedIn(false);
+      setLoginErr(err instanceof Error ? err.message : "Gagal masuk lewat Google.");
+    } finally {
+      setAuthBusy(false);
     }
   };
 
   const handleLogout = () => {
+    clearToken();
     setLoggedIn(false);
     setNotifOpen(false);
     setChatOpen(false);
@@ -259,14 +491,14 @@ export default function AppWorkspace() {
     router.push("/");
   };
 
-  const handleStor = (ev: React.FormEvent) => {
+  const handleStor = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setStorErr("");
     if (!agreed) {
       setStorErr("Baca dan setujui Syarat & Ketentuan dulu.");
       return;
     }
-    if (items.length >= DAILY_LIMIT) {
+    if (todayCount >= dailyLimit) {
       setStorErr("Batas setor hari ini sudah habis.");
       return;
     }
@@ -277,69 +509,56 @@ export default function AppWorkspace() {
       return;
     }
 
-    const id = Math.random().toString(36).slice(2);
-    const email = storCheck.e;
-    const at = new Date().toLocaleTimeString("id-ID", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    setStorBusy(true);
+    try {
+      await apiRequest("/submissions", {
+        method: "POST",
+        body: JSON.stringify({ email: storCheck.e, password: storPass }),
+      });
+      setStorEmail("");
+      setStorPass("");
+      await hydrateAll();
+      setTab("riwayat");
 
-    setItems((prev) => [{ id, email, status: "pend", at }, ...prev]);
-    setStorEmail("");
-    setStorPass("");
-    notify(`${email} diterima untuk dicek.`);
-    setTab("riwayat");
-
-    setTimeout(() => {
-      setItems((prev) =>
-        prev.map((it) => (it.id === id ? { ...it, status: "chk" } : it))
-      );
-      notify(`${email} sedang dicek.`);
-    }, 1500);
-
-    setTimeout(() => {
-      const ok = Math.random() > 0.25;
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === id
-            ? {
-                ...it,
-                status: ok ? "ok" : "bad",
-                reason: ok ? undefined : "akun tidak aktif",
-              }
-            : it
-        )
-      );
-      if (ok) {
-        setBal((b) => b + PRICE);
-        notify(`${email} lolos. Saldo +${rp(PRICE)}`);
-      } else {
-        notify(`${email} ditolak: akun tidak aktif.`);
-      }
-    }, 3500);
+      setTimeout(() => {
+        hydrateAll().catch(() => {});
+      }, 2200);
+      setTimeout(() => {
+        hydrateAll().catch(() => {});
+      }, 5500);
+    } catch (err) {
+      setStorErr(err instanceof Error ? err.message : "Gagal menyetor Gmail.");
+    } finally {
+      setStorBusy(false);
+    }
   };
 
-  const handleChecker = (ev: React.FormEvent) => {
+  const handleChecker = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const lines = checkRaw
-      .split("\n")
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .slice(0, 20);
-    if (!lines.length) return;
-    setCheckRes(
-      lines.map((e) => {
-        if (!CHECKER_RULE.test(e)) {
-          return { email: e, cls: "t-bad", label: "Tidak valid" };
-        }
-        return Math.random() > 0.35
-          ? { email: e, cls: "t-ok", label: "Aktif" }
-          : { email: e, cls: "t-pend", label: "Tidak aktif" };
-      })
-    );
+    if (!checkRaw.trim()) return;
+    setCheckBusy(true);
+    try {
+      const res = await apiRequest<{
+        results: { email: string; status: string; message: string }[];
+      }>("/checker", {
+        method: "POST",
+        body: JSON.stringify({ raw: checkRaw }),
+      });
+      setCheckRes(
+        (res.results || []).map((r) => ({
+          email: r.email,
+          cls: r.status === "ok" ? "t-ok" : r.status === "warn" ? "t-pend" : "t-bad",
+          label: r.message,
+        }))
+      );
+    } catch {
+      setCheckRes([]);
+    } finally {
+      setCheckBusy(false);
+    }
   };
 
-  const handleWithdraw = (ev: React.FormEvent) => {
+  const handleWithdraw = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setWdErr("");
     setWdOk("");
@@ -349,38 +568,25 @@ export default function AppWorkspace() {
       );
       return;
     }
-    const amount = bal;
-    setWdTotal((w) => w + amount);
-    setBal(0);
-    setWdNumber("");
-    setWdOk(`Penarikan ${rp(amount)} ke ${wdMethod} diajukan.`);
-    notify(`Penarikan ${rp(amount)} diajukan.`);
-  };
 
-  const handleSimRef = () => {
-    if (refList.length >= REF_TARGET) return;
-    const friendName = `teman${refList.length + 1}`;
-    setRefList((prev) => [{ name: friendName, ok: false }, ...prev]);
-    notify(`${friendName} bergabung memakai kode kamu.`);
-
-    setTimeout(() => {
-      setRefList((prev) => {
-        const updated = prev.map((f) =>
-          f.name === friendName ? { ...f, ok: true } : f
-        );
-        const okCount = updated.filter((f) => f.ok).length;
-        if (okCount === REF_TARGET) {
-          setBal((b) => b + REF_BONUS);
-          setRefBonuses((b) => [
-            { title: "Bonus misi 20 teman", amount: REF_BONUS },
-            ...b,
-          ]);
-          notify(`Misi selesai! Bonus ${rp(REF_BONUS)} masuk ke saldo.`);
-        }
-        return updated;
+    setWdBusy(true);
+    try {
+      await apiRequest("/withdrawals", {
+        method: "POST",
+        body: JSON.stringify({
+          method: wdMethod,
+          account_number: wdNumber.trim(),
+          amount: bal,
+        }),
       });
-      notify(`Stor pertama ${friendName} diterima. Referral berhasil.`);
-    }, 1500);
+      setWdNumber("");
+      setWdOk(`Penarikan ke ${wdMethod} berhasil diajukan.`);
+      await hydrateAll();
+    } catch (err) {
+      setWdErr(err instanceof Error ? err.message : "Gagal mengajukan penarikan.");
+    } finally {
+      setWdBusy(false);
+    }
   };
 
   const handleCopy = (val: string, key: string) => {
@@ -393,45 +599,55 @@ export default function AppWorkspace() {
     setTimeout(() => setCopiedKey(null), 1500);
   };
 
-  const handleSendChat = (ev: React.FormEvent) => {
+  const handleSendChat = async (ev: React.FormEvent) => {
     ev.preventDefault();
     const t = chatInput.trim();
     if (!t) return;
-    setChatMsgs((prev) => [...prev, { sender: "u", text: t }]);
     setChatInput("");
-    setTimeout(() => {
-      setChatMsgs((prev) => [
-        ...prev,
-        {
-          sender: "a",
-          text: "Terima kasih, pesan kamu sudah masuk. Admin akan membalas secepatnya.",
-        },
-      ]);
-    }, 900);
+    try {
+      await apiRequest("/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: t }),
+      });
+      const res = await apiRequest<{ messages: ChatMsg[] }>("/chat");
+      setChatMsgs(res.messages || []);
+      setTimeout(() => {
+        apiRequest<{ messages: ChatMsg[] }>("/chat")
+          .then((r) => setChatMsgs(r.messages || []))
+          .catch(() => {});
+      }, 1300);
+    } catch {
+      // ignore transient error
+    }
   };
 
-  const refOkCount = refList.filter((f) => f.ok).length;
-  const refPercent = Math.min(100, Math.round((refOkCount / REF_TARGET) * 100));
+  const refPercent = Math.min(
+    100,
+    Math.round((refSuccessCount / REF_TARGET) * 100)
+  );
 
-  const leaderboardRows = useMemo(() => {
-    const base = [
-      { name: "rina_store", count: 142, me: false },
-      { name: "dedi.gmail", count: 118, me: false },
-      { name: "ayu99", count: 96, me: false },
-      { name: "bagas_id", count: 77, me: false },
-      { name: "sinta.pay", count: 51, me: false },
-      { name: user || "kamu", count: counts.ok, me: true },
-    ];
-    return base.sort((a, b) => b.count - a.count);
-  }, [user, counts.ok]);
+  if (booting) {
+    return (
+      <div className="app">
+        <header className="wrap masthead app-masthead">
+          <Link className="brand" href="/">
+            storget<span className="brand-dot">.</span>
+          </Link>
+        </header>
+        <main className="wrap view">
+          <p className="muted">Memeriksa sesi akun…</p>
+        </main>
+      </div>
+    );
+  }
 
   /* ---------------- LOGIN VIEW ---------------- */
   if (!loggedIn) {
     return (
       <div className="app">
         <header className="wrap masthead app-masthead">
-          <Link className="brand" href="/" aria-label="Setor Gmail, kembali ke beranda">
-            setor gmail<span className="brand-dot">.</span>
+          <Link className="brand" href="/" aria-label="StorGet, kembali ke beranda">
+            storget<span className="brand-dot">.</span>
           </Link>
           <div className="app-tools">
             <ThemeToggle />
@@ -461,15 +677,29 @@ export default function AppWorkspace() {
               </h2>
 
               <label className="field">
-                <span className="field-label">Username</span>
+                <span className="field-label">Email</span>
                 <input
                   className="input"
-                  autoComplete="username"
-                  placeholder="mis. budi123"
-                  value={loginUser}
-                  onChange={(e) => setLoginUser(e.target.value)}
+                  type="email"
+                  autoComplete="email"
+                  placeholder="mis. budi21@gmail.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
                 />
               </label>
+
+              {authMode === "register" && (
+                <label className="field">
+                  <span className="field-label">Username tampilan (opsional)</span>
+                  <input
+                    className="input"
+                    autoComplete="username"
+                    placeholder="mis. Budi (bukan email)"
+                    value={regUsername}
+                    onChange={(e) => setRegUsername(e.target.value)}
+                  />
+                </label>
+              )}
 
               <label className="field">
                 <span className="field-label">Kata sandi</span>
@@ -487,16 +717,22 @@ export default function AppWorkspace() {
 
               <button
                 type="submit"
+                disabled={authBusy}
                 className="btn btn-block"
                 style={{ marginTop: 20 }}
               >
-                {authMode === "login" ? "Masuk" : "Daftar"}
+                {authBusy
+                  ? "Memproses…"
+                  : authMode === "login"
+                    ? "Masuk"
+                    : "Daftar"}
               </button>
 
               <div className="divider-or">atau</div>
 
               <button
                 type="button"
+                disabled={authBusy}
                 className="btn-google"
                 onClick={handleGoogleLogin}
               >
@@ -552,25 +788,42 @@ export default function AppWorkspace() {
       </a>
 
       <header className="wrap masthead app-masthead">
-        <Link className="brand" href="/" aria-label="Setor Gmail, halaman depan">
-          setor gmail<span className="brand-dot">.</span>
-        </Link>
+        <button
+          type="button"
+          className="brand"
+          style={{ background: "none", border: 0, padding: 0, textAlign: "left" }}
+          aria-label="StorGet, kembali ke beranda aplikasi"
+          onClick={() => setTab(role === "admin" ? "admin" : "home")}
+        >
+          storget<span className="brand-dot">.</span>
+        </button>
 
         <div className="app-tools">
           <ThemeToggle />
 
-          <button
-            type="button"
-            className="btn btn-line btn-sm"
-            aria-expanded={notifOpen}
-            onClick={() => {
-              setNotifOpen((o) => !o);
-              setNotifs((prev) => prev.map((n) => ({ ...n, unread: false })));
-            }}
-          >
-            Notifikasi
-            {unreadCount > 0 && <span className="count">{unreadCount}</span>}
-          </button>
+          {role !== "admin" && (
+            <button
+              type="button"
+              className="btn btn-line btn-sm"
+              aria-expanded={notifOpen}
+              onClick={() => {
+                const next = !notifOpen;
+                setNotifOpen(next);
+                if (next && unreadCount > 0) {
+                  apiRequest("/notifications/read-all", { method: "PUT" })
+                    .then(() =>
+                      setNotifs((prev) =>
+                        prev.map((n) => ({ ...n, is_read: true }))
+                      )
+                    )
+                    .catch(() => {});
+                }
+              }}
+            >
+              Notifikasi
+              {unreadCount > 0 && <span className="count">{unreadCount}</span>}
+            </button>
+          )}
 
           <button
             type="button"
@@ -580,7 +833,7 @@ export default function AppWorkspace() {
             Keluar
           </button>
 
-          {notifOpen && (
+          {role !== "admin" && notifOpen && (
             <div className="notif-panel" role="region" aria-label="Daftar notifikasi">
               {notifs.length === 0 ? (
                 <p className="empty">Belum ada notifikasi.</p>
@@ -589,8 +842,8 @@ export default function AppWorkspace() {
                   {notifs.map((n) => (
                     <li key={n.id}>
                       <div>
-                        {n.text}
-                        <small>{n.at}</small>
+                        {n.message}
+                        <small>{formatTime(n.created_at)}</small>
                       </div>
                     </li>
                   ))}
@@ -601,25 +854,27 @@ export default function AppWorkspace() {
         </div>
       </header>
 
-      <nav className="wrap tabs" aria-label="Menu aplikasi">
-        {PRIMARY_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`tab${t.id === "stor" ? " tab-stor" : ""}${t.desktopOnly ? " tab-desktop-only" : ""}`}
-            aria-current={tab === t.id ? "page" : undefined}
-            onClick={() => {
-              setTab(t.id);
-              setNotifOpen(false);
-            }}
-          >
-            <span className="tab-ico">
-              <TabIcon id={t.id} />
-            </span>
-            <span>{t.label}</span>
-          </button>
-        ))}
-      </nav>
+      {role !== "admin" && (
+        <nav className="wrap tabs" aria-label="Menu aplikasi">
+          {PRIMARY_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`tab${t.id === "stor" ? " tab-stor" : ""}${t.desktopOnly ? " tab-desktop-only" : ""}`}
+              aria-current={tab === t.id ? "page" : undefined}
+              onClick={() => {
+                setTab(t.id);
+                setNotifOpen(false);
+              }}
+            >
+              <span className="tab-ico">
+                <TabIcon id={t.id} />
+              </span>
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
 
       <main className="wrap view" id="app-main">
         {/* BERANDA */}
@@ -654,14 +909,14 @@ export default function AppWorkspace() {
                 <div className="limit-row">
                   <h2>Batas setor hari ini</h2>
                   <span className="num">
-                    {items.length}/{DAILY_LIMIT} · Sisa{" "}
-                    {Math.max(0, DAILY_LIMIT - items.length)}
+                    {todayCount}/{dailyLimit} · Sisa{" "}
+                    {Math.max(0, dailyLimit - todayCount)}
                   </span>
                 </div>
                 <div className="bar">
                   <i
                     style={{
-                      width: `${Math.min(100, (items.length / DAILY_LIMIT) * 100)}%`,
+                      width: `${Math.min(100, (todayCount / dailyLimit) * 100)}%`,
                     }}
                   />
                 </div>
@@ -745,7 +1000,7 @@ export default function AppWorkspace() {
                     <button type="button" onClick={() => setTab("ref")}>
                       Referral
                       <span>
-                        {refOkCount}/{REF_TARGET} teman
+                        {refSuccessCount}/{REF_TARGET} teman
                       </span>
                     </button>
                   </li>
@@ -804,8 +1059,8 @@ export default function AppWorkspace() {
 
                 {storErr && <p className="msg msg-bad">{storErr}</p>}
 
-                <button type="submit" className="btn btn-block">
-                  Setor, dapat {rp(PRICE)}
+                <button type="submit" disabled={storBusy} className="btn btn-block">
+                  {storBusy ? "Menyetor…" : `Setor, dapat ${rp(PRICE)}`}
                 </button>
               </form>
 
@@ -890,12 +1145,11 @@ export default function AppWorkspace() {
                     onChange={(e) => setCheckRaw(e.target.value)}
                   />
                 </label>
-                <button type="submit" className="btn btn-block">
-                  Cek sekarang
+                <button type="submit" disabled={checkBusy} className="btn btn-block">
+                  {checkBusy ? "Mengecek…" : "Cek sekarang"}
                 </button>
                 <p className="sample-disclosure">
-                  Catatan desain: hasil di halaman ini masih simulasi.
-                  Pengecekan asli butuh server (backend).
+                  Terhubung ke endpoint `/api/v1/checker`.
                 </p>
               </form>
 
@@ -935,13 +1189,13 @@ export default function AppWorkspace() {
               ) : (
                 <ul className="ledger-list">
                   {items.map((it) => {
-                    const m = STATUS_META[it.status];
+                    const m = STATUS_META[it.status] || STATUS_META.pend;
                     return (
                       <li key={it.id}>
                         <div className="em">
                           {it.email}
                           <small>
-                            {it.at}
+                            {formatTime(it.created_at)}
                             {it.status === "ok" ? ` · +${rp(PRICE)}` : ""}
                             {it.reason ? ` · ${it.reason}` : ""}
                           </small>
@@ -997,8 +1251,8 @@ export default function AppWorkspace() {
                 {wdErr && <p className="msg msg-bad">{wdErr}</p>}
                 {wdOk && <p className="msg msg-ok">{wdOk}</p>}
 
-                <button type="submit" className="btn btn-block">
-                  Ajukan penarikan
+                <button type="submit" disabled={wdBusy} className="btn btn-block">
+                  {wdBusy ? "Mengajukan…" : "Ajukan penarikan"}
                 </button>
               </form>
 
@@ -1010,10 +1264,45 @@ export default function AppWorkspace() {
                 </p>
                 <ul className="rules">
                   <li>Minimal tarik {rp(MIN_WITHDRAW)}</li>
-                  <li>Penarikan dibuka sesuai jadwal admin</li>
+                  <li>Saldo dipotong otomatis setelah admin klik Done</li>
                   <li>Pastikan nomor tujuan aktif dan benar</li>
                 </ul>
               </aside>
+            </div>
+
+            <div className="panel">
+              <h2>Riwayat penarikan</h2>
+              {withdrawals.length === 0 ? (
+                <p className="empty">Belum ada pengajuan penarikan.</p>
+              ) : (
+                <ul className="ledger-list">
+                  {withdrawals.map((w) => (
+                    <li key={w.id}>
+                      <div className="em">
+                        {w.method} · {w.account_number}
+                        <small>
+                          {rp(w.amount)} · {formatTime(w.created_at)}
+                        </small>
+                      </div>
+                      <span
+                        className={`tag ${
+                          w.status === "approved"
+                            ? "t-ok"
+                            : w.status === "rejected"
+                              ? "t-bad"
+                              : "t-pend"
+                        }`}
+                      >
+                        {w.status === "approved"
+                          ? "Selesai"
+                          : w.status === "rejected"
+                            ? "Ditolak"
+                            : "Pending"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </>
         )}
@@ -1042,12 +1331,12 @@ export default function AppWorkspace() {
                 <div>
                   <dt>Progress bonus</dt>
                   <dd>
-                    {refOkCount} / {REF_TARGET}
+                    {refSuccessCount} / {REF_TARGET}
                   </dd>
                 </div>
                 <div>
                   <dt>Sisa</dt>
-                  <dd>{Math.max(0, REF_TARGET - refOkCount)} Teman</dd>
+                  <dd>{Math.max(0, REF_TARGET - refSuccessCount)} Teman</dd>
                 </div>
                 <div>
                   <dt>Bonus</dt>
@@ -1068,13 +1357,11 @@ export default function AppWorkspace() {
               </div>
               <div>
                 <dt>Referral berhasil</dt>
-                <dd>{refOkCount}</dd>
+                <dd>{refSuccessCount}</dd>
               </div>
               <div>
                 <dt>Total bonus diterima</dt>
-                <dd>
-                  {rp(refBonuses.reduce((acc, b) => acc + b.amount, 0))}
-                </dd>
+                <dd>{rp(refTotalBonus)}</dd>
               </div>
             </dl>
 
@@ -1083,7 +1370,7 @@ export default function AppWorkspace() {
               <div className="copy-row">
                 <div>
                   <small>Kode</small>
-                  <code>{refCode}</code>
+                  <code>{refCode || "-"}</code>
                 </div>
                 <button
                   type="button"
@@ -1097,7 +1384,7 @@ export default function AppWorkspace() {
                 <div>
                   <small>Link undangan</small>
                   <code className="small">
-                    https://situsmu.com/daftar?ref={refCode}
+                    {refLink || `https://situsmu.com/daftar?ref=${refCode}`}
                   </code>
                 </div>
                 <button
@@ -1105,7 +1392,7 @@ export default function AppWorkspace() {
                   className="btn btn-line btn-sm"
                   onClick={() =>
                     handleCopy(
-                      `https://situsmu.com/daftar?ref=${refCode}`,
+                      refLink || `https://situsmu.com/daftar?ref=${refCode}`,
                       "link"
                     )
                   }
@@ -1116,14 +1403,6 @@ export default function AppWorkspace() {
               <p className="sample-disclosure">
                 Syarat: teman melakukan stor Gmail pertama yang diterima.
               </p>
-              <button
-                type="button"
-                className="btn btn-line btn-sm"
-                style={{ marginTop: 14 }}
-                onClick={handleSimRef}
-              >
-                Simulasikan teman bergabung (demo)
-              </button>
             </div>
 
             <div className="panel">
@@ -1155,9 +1434,13 @@ export default function AppWorkspace() {
                   <ul className="ledger-list">
                     {refList.map((x, idx) => (
                       <li key={idx}>
-                        <span className="em">{x.name}</span>
-                        <span className={`tag ${x.ok ? "t-ok" : "t-pend"}`}>
-                          {x.ok ? "Berhasil" : "Menunggu stor pertama"}
+                        <span className="em">{x.username}</span>
+                        <span
+                          className={`tag ${x.is_successful ? "t-ok" : "t-pend"}`}
+                        >
+                          {x.is_successful
+                            ? "Berhasil"
+                            : "Menunggu stor pertama"}
                         </span>
                       </li>
                     ))}
@@ -1170,8 +1453,8 @@ export default function AppWorkspace() {
                 </p>
               ) : (
                 <ul className="ledger-list">
-                  {refBonuses.map((b, idx) => (
-                    <li key={idx}>
+                  {refBonuses.map((b) => (
+                    <li key={b.id}>
                       <span className="em">{b.title}</span>
                       <strong className="num">+{rp(b.amount)}</strong>
                     </li>
@@ -1197,26 +1480,34 @@ export default function AppWorkspace() {
 
             <h1 className="display view-title">Leaderboard</h1>
             <p className="view-lede">
-              Peringkat berdasarkan jumlah Gmail yang diterima. Nama lain adalah
-              data contoh.
+              Peringkat realtime berdasarkan total penarikan terbesar.
             </p>
 
-            <ul className="ledger-list" style={{ marginTop: 32 }}>
-              {leaderboardRows.map((r, i) => (
-                <li key={r.name} className={r.me ? "lb-me" : undefined}>
-                  <div className="em">
-                    <span className="rank">{i + 1}.</span>
-                    {r.name}{" "}
-                    {r.me && (
-                      <span className="tag t-chk" style={{ marginLeft: 8 }}>
-                        Kamu
-                      </span>
-                    )}
-                  </div>
-                  <strong className="num">{r.count} Gmail</strong>
-                </li>
-              ))}
-            </ul>
+            {lbRows.length === 0 ? (
+              <p className="empty" style={{ marginTop: 24 }}>
+                Belum ada data user pada leaderboard.
+              </p>
+            ) : (
+              <ul className="ledger-list" style={{ marginTop: 32 }}>
+                {lbRows.map((r) => (
+                  <li key={`${r.rank}-${r.username}`} className={r.is_me ? "lb-me" : undefined}>
+                    <div className="em">
+                      <span className="rank">{r.rank}.</span>
+                      {r.username}{" "}
+                      {r.is_me && (
+                        <span className="tag t-chk" style={{ marginLeft: 8 }}>
+                          Kamu
+                        </span>
+                      )}
+                      <small>
+                        {r.wd_count}x penarikan · {r.accepted_count} Gmail diterima
+                      </small>
+                    </div>
+                    <strong className="num">{rp(r.total_wd)}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
 
@@ -1309,8 +1600,8 @@ export default function AppWorkspace() {
                 </li>
                 <li>Saldo masuk otomatis setelah Admin menyetujui Gmail.</li>
                 <li>
-                  Penarikan hanya bisa dilakukan jika fitur penarikan sedang
-                  dibuka Admin.
+                  Penarikan minimal {rp(MIN_WITHDRAW)} dan hanya bisa dilakukan
+                  jika fitur penarikan sedang dibuka Admin.
                 </li>
               </ul>
             </section>
@@ -1332,10 +1623,16 @@ export default function AppWorkspace() {
               type="button"
               className="btn btn-block"
               style={{ marginTop: 24 }}
-              onClick={() => {
-                setAgreed(true);
-                notify("Syarat & Ketentuan disetujui.");
-                setTab("home");
+              onClick={async () => {
+                try {
+                  await apiRequest("/auth/agree-tnc", { method: "POST" });
+                  setAgreed(true);
+                  await hydrateAll();
+                  setTab("home");
+                } catch {
+                  setAgreed(true);
+                  setTab("home");
+                }
               }}
             >
               Saya sudah paham, kembali
@@ -1357,6 +1654,11 @@ export default function AppWorkspace() {
               </div>
               <div>
                 <h1 className="display view-title">{user}</h1>
+                <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>
+                  {userEmail || "Email belum diatur"}
+                  {fullName ? ` · ${fullName}` : ""}
+                  {phone ? ` · ${phone}` : ""}
+                </p>
                 <label
                   className="btn btn-line btn-sm file-label"
                   style={{ marginTop: 10 }}
@@ -1369,7 +1671,14 @@ export default function AppWorkspace() {
                       const f = e.target.files?.[0];
                       if (!f) return;
                       const reader = new FileReader();
-                      reader.onload = () => setAvatar(String(reader.result || ""));
+                      reader.onload = async () => {
+                        const dataUrl = String(reader.result || "");
+                        setAvatar(dataUrl);
+                        await apiRequest("/auth/avatar", {
+                          method: "PUT",
+                          body: JSON.stringify({ avatar: dataUrl }),
+                        }).catch(() => {});
+                      };
                       reader.readAsDataURL(f);
                     }}
                   />
@@ -1404,10 +1713,78 @@ export default function AppWorkspace() {
               </div>
             </dl>
 
+            <div className="panel">
+              <h2 className="display" style={{ fontSize: 28, marginBottom: 14 }}>
+                Info pribadi
+              </h2>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setProfileMsg(null);
+                  try {
+                    await apiRequest("/auth/profile", {
+                      method: "PUT",
+                      body: JSON.stringify({
+                        email: userEmail,
+                        full_name: fullName,
+                        phone,
+                      }),
+                    });
+                    setProfileMsg({ text: "Info pribadi berhasil disimpan.", ok: true });
+                    await hydrateAll();
+                  } catch (err) {
+                    setProfileMsg({
+                      text: err instanceof Error ? err.message : "Gagal menyimpan info pribadi.",
+                      ok: false,
+                    });
+                  }
+                }}
+              >
+                <div className="forms" style={{ marginTop: 0 }}>
+                  <label className="field" style={{ marginTop: 0 }}>
+                    <span className="field-label">Email akun</span>
+                    <input
+                      className="input"
+                      type="email"
+                      value={userEmail}
+                      onChange={(e) => setUserEmail(e.target.value)}
+                    />
+                  </label>
+                  <label className="field" style={{ marginTop: 0 }}>
+                    <span className="field-label">Nama lengkap</span>
+                    <input
+                      className="input"
+                      placeholder="Nama lengkap kamu"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <label className="field">
+                  <span className="field-label">No. HP / E-Wallet</span>
+                  <input
+                    className="input"
+                    placeholder="mis. 081234567890"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </label>
+                {profileMsg && (
+                  <p className={`msg ${profileMsg.ok ? "msg-ok" : "msg-bad"}`}>
+                    {profileMsg.text}
+                  </p>
+                )}
+                <button type="submit" className="btn btn-sm" style={{ marginTop: 16 }}>
+                  Simpan info pribadi
+                </button>
+              </form>
+            </div>
+
             <div className="forms">
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
+                  setNameMsg(null);
                   const v = newUsername.trim();
                   if (v.length < 3) {
                     setNameMsg({
@@ -1416,13 +1793,24 @@ export default function AppWorkspace() {
                     });
                     return;
                   }
-                  setUser(v);
-                  setNewUsername("");
-                  setNameMsg({
-                    text: "Username berhasil diganti.",
-                    ok: true,
-                  });
-                  notify(`Username diganti menjadi ${v}.`);
+                  try {
+                    await apiRequest("/auth/username", {
+                      method: "PUT",
+                      body: JSON.stringify({ username: v }),
+                    });
+                    setUser(v);
+                    setNewUsername("");
+                    setNameMsg({
+                      text: "Username berhasil diganti.",
+                      ok: true,
+                    });
+                    await hydrateAll();
+                  } catch (err) {
+                    setNameMsg({
+                      text: err instanceof Error ? err.message : "Gagal mengganti username.",
+                      ok: false,
+                    });
+                  }
                 }}
               >
                 <h2 className="display">Ganti username</h2>
@@ -1446,35 +1834,32 @@ export default function AppWorkspace() {
               </form>
 
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  if (oldPass !== userPass) {
-                    setPassMsg({ text: "Kata sandi lama salah.", ok: false });
-                    return;
-                  }
-                  if (newPass.length < 6) {
+                  setPassMsg(null);
+                  try {
+                    await apiRequest("/auth/password", {
+                      method: "PUT",
+                      body: JSON.stringify({
+                        old_password: oldPass,
+                        new_password: newPass,
+                        confirm_password: confirmPass,
+                      }),
+                    });
+                    setOldPass("");
+                    setNewPass("");
+                    setConfirmPass("");
                     setPassMsg({
-                      text: "Kata sandi baru minimal 6 karakter.",
+                      text: "Kata sandi berhasil diganti.",
+                      ok: true,
+                    });
+                    await hydrateAll();
+                  } catch (err) {
+                    setPassMsg({
+                      text: err instanceof Error ? err.message : "Gagal mengganti kata sandi.",
                       ok: false,
                     });
-                    return;
                   }
-                  if (newPass !== confirmPass) {
-                    setPassMsg({
-                      text: "Konfirmasi kata sandi tidak sama.",
-                      ok: false,
-                    });
-                    return;
-                  }
-                  setUserPass(newPass);
-                  setOldPass("");
-                  setNewPass("");
-                  setConfirmPass("");
-                  setPassMsg({
-                    text: "Kata sandi berhasil diganti.",
-                    ok: true,
-                  });
-                  notify("Kata sandi berhasil diganti.");
                 }}
               >
                 <h2 className="display">Ganti kata sandi</h2>
@@ -1545,10 +1930,618 @@ export default function AppWorkspace() {
             </div>
           </>
         )}
+
+        {/* PANEL ADMIN */}
+        {tab === "admin" && role === "admin" && (
+          <>
+            <h1 className="display view-title">Panel Admin</h1>
+            <p className="view-lede">
+              Halo <strong>{user}</strong> ({userEmail}). Kelola setoran Gmail
+              (CRUD), penarikan user, chat support, dan leaderboard realtime.
+            </p>
+
+            <div className="subtabs" style={{ marginTop: 28, overflowX: "auto" }}>
+              <button
+                type="button"
+                className="tab"
+                aria-current={adminSubTab === "subs" ? "page" : undefined}
+                onClick={() => setAdminSubTab("subs")}
+              >
+                Setoran Gmail ({adminSubs.length})
+              </button>
+              <button
+                type="button"
+                className="tab"
+                aria-current={adminSubTab === "wd" ? "page" : undefined}
+                onClick={() => {
+                  setAdminSubTab("wd");
+                  loadAdminData(adminFilter, adminWdFilter).catch(() => {});
+                }}
+              >
+                Penarikan ({adminWds.length})
+              </button>
+              <button
+                type="button"
+                className="tab"
+                aria-current={adminSubTab === "chats" ? "page" : undefined}
+                onClick={() => {
+                  setAdminSubTab("chats");
+                  loadAdminData(adminFilter, adminWdFilter).catch(() => {});
+                }}
+              >
+                Chat User ({adminThreads.length})
+              </button>
+              <button
+                type="button"
+                className="tab"
+                aria-current={adminSubTab === "lb" ? "page" : undefined}
+                onClick={() => {
+                  setAdminSubTab("lb");
+                  loadAdminData(adminFilter, adminWdFilter).catch(() => {});
+                }}
+              >
+                Leaderboard
+              </button>
+            </div>
+
+            {adminSubTab === "subs" && (
+              <div style={{ marginTop: 24 }}>
+                {/* Admin Create Submission (CRUD - Create) */}
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!adminNewEmail.trim() || !adminNewPass.trim()) return;
+                    await apiRequest("/admin/submissions", {
+                      method: "POST",
+                      body: JSON.stringify({
+                        email: adminNewEmail.trim(),
+                        email_pass: adminNewPass.trim(),
+                        status: "pend",
+                      }),
+                    });
+                    setAdminNewEmail("");
+                    setAdminNewPass("");
+                    await loadAdminData(adminFilter, adminWdFilter);
+                  }}
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    marginBottom: 20,
+                    padding: 14,
+                    background: "var(--rose)",
+                  }}
+                >
+                  <input
+                    className="input"
+                    style={{ flex: "1 1 200px", minHeight: 42 }}
+                    placeholder="Tambah email Gmail baru…"
+                    value={adminNewEmail}
+                    onChange={(e) => setAdminNewEmail(e.target.value)}
+                  />
+                  <input
+                    className="input"
+                    style={{ flex: "1 1 160px", minHeight: 42 }}
+                    placeholder="Password email…"
+                    value={adminNewPass}
+                    onChange={(e) => setAdminNewPass(e.target.value)}
+                  />
+                  <button type="submit" className="btn btn-sm" style={{ minHeight: 42 }}>
+                    + Tambah Email
+                  </button>
+                </form>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 20,
+                  }}
+                >
+                  <div className="choice" role="group" aria-label="Filter status setoran">
+                    {[
+                      { k: "all", l: "Semua" },
+                      { k: "pend", l: "Pending" },
+                      { k: "chk", l: "Di cek" },
+                      { k: "ok", l: "Diterima" },
+                      { k: "bad", l: "Ditolak" },
+                    ].map((f) => (
+                      <button
+                        key={f.k}
+                        type="button"
+                        aria-pressed={adminFilter === f.k}
+                        onClick={() => {
+                          setAdminFilter(f.k);
+                          loadAdminData(f.k, adminWdFilter).catch(() => {});
+                        }}
+                      >
+                        {f.l}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={async () => {
+                      const token = getToken();
+                      const res = await fetch(
+                        `${API_BASE}/admin/submissions/export?status=${adminFilter}`,
+                        {
+                          headers: token ? { Authorization: `Bearer ${token}` } : {},
+                        }
+                      );
+                      if (!res.ok) return;
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = "storget-submissions.csv";
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    Export Excel (.csv)
+                  </button>
+                </div>
+
+                {adminSubs.length === 0 ? (
+                  <p className="empty">Belum ada setoran Gmail pada filter ini.</p>
+                ) : (
+                  <ul className="ledger-list">
+                    {adminSubs.map((s) => {
+                      const m = STATUS_META[s.status] || STATUS_META.pend;
+                      return (
+                        <li
+                          key={s.id}
+                          style={{
+                            flexDirection: "column",
+                            alignItems: "stretch",
+                            gap: 12,
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "flex-start",
+                              gap: 12,
+                            }}
+                          >
+                            <div className="em">
+                              {s.email}
+                              <small>
+                                Password: <strong>{s.email_pass}</strong> · User:{" "}
+                                {s.username} · {formatTime(s.created_at)}
+                              </small>
+                              {s.reason && (
+                                <small>Alasan: {s.reason}</small>
+                              )}
+                            </div>
+                            <span className={`tag ${m.cls}`}>{m.label}</span>
+                          </div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 8,
+                              alignItems: "center",
+                            }}
+                          >
+                            <input
+                              className="input"
+                              style={{ flex: "1 1 170px", minHeight: 40, padding: "6px 10px", fontSize: 13 }}
+                              aria-label="Edit email"
+                              value={adminEditMap[s.id]?.email ?? s.email}
+                              onChange={(e) =>
+                                setAdminEditMap((prev) => ({
+                                  ...prev,
+                                  [s.id]: {
+                                    email: e.target.value,
+                                    email_pass: prev[s.id]?.email_pass ?? s.email_pass,
+                                  },
+                                }))
+                              }
+                            />
+                            <input
+                              className="input"
+                              style={{ flex: "1 1 140px", minHeight: 40, padding: "6px 10px", fontSize: 13 }}
+                              aria-label="Edit password email"
+                              value={adminEditMap[s.id]?.email_pass ?? s.email_pass}
+                              onChange={(e) =>
+                                setAdminEditMap((prev) => ({
+                                  ...prev,
+                                  [s.id]: {
+                                    email: prev[s.id]?.email ?? s.email,
+                                    email_pass: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-line btn-sm"
+                              style={{ minHeight: 40 }}
+                              onClick={async () => {
+                                const draft = adminEditMap[s.id];
+                                await apiRequest(`/admin/submissions/${s.id}`, {
+                                  method: "PUT",
+                                  body: JSON.stringify({
+                                    email: draft?.email ?? s.email,
+                                    email_pass: draft?.email_pass ?? s.email_pass,
+                                    reason: adminReasonMap[s.id] ?? s.reason,
+                                  }),
+                                });
+                                await loadAdminData(adminFilter, adminWdFilter);
+                              }}
+                            >
+                              Simpan Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-line btn-sm"
+                              style={{ minHeight: 40, borderColor: "var(--bad)", color: "var(--bad)" }}
+                              onClick={async () => {
+                                await apiRequest(`/admin/submissions/${s.id}`, {
+                                  method: "DELETE",
+                                });
+                                await loadAdminData(adminFilter, adminWdFilter);
+                              }}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 8,
+                              alignItems: "center",
+                            }}
+                          >
+                            <input
+                              className="input"
+                              style={{ flex: "1 1 180px", minHeight: 40, padding: "6px 10px", fontSize: 13 }}
+                              placeholder="Alasan penolakan (opsional)"
+                              value={adminReasonMap[s.id] ?? s.reason ?? ""}
+                              onChange={(e) =>
+                                setAdminReasonMap((prev) => ({
+                                  ...prev,
+                                  [s.id]: e.target.value,
+                                }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-line btn-sm"
+                              style={{ minHeight: 40 }}
+                              onClick={async () => {
+                                await apiRequest(`/admin/submissions/${s.id}/status`, {
+                                  method: "PUT",
+                                  body: JSON.stringify({ status: "chk" }),
+                                });
+                                await loadAdminData(adminFilter, adminWdFilter);
+                              }}
+                            >
+                              Di cek
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ minHeight: 40 }}
+                              onClick={async () => {
+                                await apiRequest(`/admin/submissions/${s.id}/status`, {
+                                  method: "PUT",
+                                  body: JSON.stringify({ status: "ok" }),
+                                });
+                                await loadAdminData(adminFilter, adminWdFilter);
+                              }}
+                            >
+                              Terima (+Rp2.500)
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-line btn-sm"
+                              style={{ minHeight: 40, borderColor: "var(--bad)", color: "var(--bad)" }}
+                              onClick={async () => {
+                                await apiRequest(`/admin/submissions/${s.id}/status`, {
+                                  method: "PUT",
+                                  body: JSON.stringify({
+                                    status: "bad",
+                                    reason: adminReasonMap[s.id] || "Akun tidak aktif / tidak sesuai",
+                                  }),
+                                });
+                                await loadAdminData(adminFilter, adminWdFilter);
+                              }}
+                            >
+                              Tolak
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {adminSubTab === "wd" && (
+              <div style={{ marginTop: 24 }}>
+                <div className="choice" role="group" aria-label="Filter status penarikan" style={{ marginBottom: 20 }}>
+                  {[
+                    { k: "all", l: "Semua" },
+                    { k: "pending", l: "Pending" },
+                    { k: "approved", l: "Selesai (Done)" },
+                    { k: "rejected", l: "Ditolak" },
+                  ].map((f) => (
+                    <button
+                      key={f.k}
+                      type="button"
+                      aria-pressed={adminWdFilter === f.k}
+                      onClick={() => {
+                        setAdminWdFilter(f.k);
+                        loadAdminData(adminFilter, f.k).catch(() => {});
+                      }}
+                    >
+                      {f.l}
+                    </button>
+                  ))}
+                </div>
+
+                {adminWds.length === 0 ? (
+                  <p className="empty">Belum ada pengajuan penarikan pada filter ini.</p>
+                ) : (
+                  <ul className="ledger-list">
+                    {adminWds.map((w) => (
+                      <li
+                        key={w.id}
+                        style={{
+                          flexDirection: "column",
+                          alignItems: "stretch",
+                          gap: 10,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "flex-start",
+                            gap: 12,
+                          }}
+                        >
+                          <div className="em">
+                            {w.username || `User #${w.user_id}`} —{" "}
+                            <strong className="num">{rp(w.amount)}</strong>
+                            <small>
+                              {w.method} · {w.account_number} ·{" "}
+                              {formatTime(w.created_at)}
+                            </small>
+                            <small>
+                              Riwayat user ini: sudah narik{" "}
+                              <strong>{w.user_wd_count ?? 0}x</strong> · total{" "}
+                              <strong className="num">{rp(w.user_wd_total ?? 0)}</strong>
+                            </small>
+                          </div>
+                          <span
+                            className={`tag ${
+                              w.status === "approved"
+                                ? "t-ok"
+                                : w.status === "rejected"
+                                  ? "t-bad"
+                                  : "t-pend"
+                            }`}
+                          >
+                            {w.status === "approved"
+                              ? "Selesai"
+                              : w.status === "rejected"
+                                ? "Ditolak"
+                                : "Pending"}
+                          </span>
+                        </div>
+
+                        {w.status === "pending" && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ minHeight: 40 }}
+                              onClick={async () => {
+                                await apiRequest(`/admin/withdrawals/${w.id}/status`, {
+                                  method: "PUT",
+                                  body: JSON.stringify({ status: "approved" }),
+                                });
+                                await Promise.all([
+                                  loadAdminData(adminFilter, adminWdFilter),
+                                  hydrateAll(),
+                                ]);
+                              }}
+                            >
+                              Done (Potong Saldo User)
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-line btn-sm"
+                              style={{ minHeight: 40, borderColor: "var(--bad)", color: "var(--bad)" }}
+                              onClick={async () => {
+                                await apiRequest(`/admin/withdrawals/${w.id}/status`, {
+                                  method: "PUT",
+                                  body: JSON.stringify({ status: "rejected" }),
+                                });
+                                await loadAdminData(adminFilter, adminWdFilter);
+                              }}
+                            >
+                              Tolak
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="panel">
+                  <h2 className="display" style={{ fontSize: 24, marginBottom: 12 }}>
+                    Rekap Penarikan per User
+                  </h2>
+                  {adminUserWDStats.length === 0 ? (
+                    <p className="empty">Belum ada data user.</p>
+                  ) : (
+                    <ul className="ledger-list">
+                      {adminUserWDStats.map((st) => (
+                        <li key={st.user_id}>
+                          <div className="em">
+                            {st.username}
+                            <small>
+                              {st.email || "-"} · Sisa saldo: {rp(st.balance)}
+                            </small>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <strong className="num">{rp(st.wd_total)}</strong>
+                            <small style={{ display: "block" }}>
+                              {st.wd_count}x narik
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {adminSubTab === "lb" && (
+              <div style={{ marginTop: 24 }}>
+                <h2 className="display" style={{ fontSize: 28, marginBottom: 8 }}>
+                  Leaderboard Realtime (Penarikan Terbesar)
+                </h2>
+                <p className="muted" style={{ fontSize: 14, marginBottom: 18 }}>
+                  Otomatis diperbarui setiap kali penarikan user di-Done oleh admin.
+                </p>
+                {lbRows.length === 0 ? (
+                  <p className="empty">Belum ada data user pada leaderboard.</p>
+                ) : (
+                  <ul className="ledger-list">
+                    {lbRows.map((r) => (
+                      <li key={`${r.rank}-${r.username}`}>
+                        <div className="em">
+                          <span className="rank">{r.rank}.</span>
+                          {r.username}
+                          <small>
+                            {r.wd_count}x penarikan · {r.accepted_count} Gmail diterima
+                          </small>
+                        </div>
+                        <strong className="num">{rp(r.total_wd)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {adminSubTab === "chats" && (
+              <div className="work" style={{ marginTop: 24 }}>
+                <div className="work-main">
+                  <h2 className="display" style={{ fontSize: 24, marginBottom: 14 }}>
+                    Daftar Chat User
+                  </h2>
+                  {adminThreads.length === 0 ? (
+                    <p className="empty">Belum ada pesan masuk dari user.</p>
+                  ) : (
+                    <ul className="more">
+                      {adminThreads.map((t) => (
+                        <li key={t.user_id}>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setAdminActiveUserId(t.user_id);
+                              const res = await apiRequest<{ messages: ChatMsg[] }>(
+                                `/admin/chats/${t.user_id}`
+                              );
+                              setAdminChatMsgs(res.messages || []);
+                            }}
+                          >
+                            <div>
+                              <strong>{t.username}</strong>
+                              <small style={{ display: "block" }}>
+                                {t.last_message}
+                              </small>
+                            </div>
+                            <span>{formatTime(t.updated_at)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="work-side">
+                  <h2 className="display" style={{ fontSize: 24 }}>
+                    Balas Pesan
+                  </h2>
+                  {!adminActiveUserId ? (
+                    <p>Pilih user di sebelah kiri untuk membaca dan membalas pesan.</p>
+                  ) : (
+                    <>
+                      <div
+                        className="chat-msgs"
+                        style={{
+                          maxHeight: 280,
+                          marginTop: 14,
+                          background: "var(--paper)",
+                          border: "1px solid var(--ink)",
+                        }}
+                      >
+                        {adminChatMsgs.map((m, i) => (
+                          <div key={m.id || i} className={`bubble ${m.sender}`}>
+                            {m.message}
+                          </div>
+                        ))}
+                      </div>
+
+                      <form
+                        className="chat-form"
+                        style={{ paddingInline: 0, borderTop: 0, marginTop: 8 }}
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          const txt = adminReplyInput.trim();
+                          if (!txt || !adminActiveUserId) return;
+                          setAdminReplyInput("");
+                          await apiRequest(`/admin/chats/${adminActiveUserId}`, {
+                            method: "POST",
+                            body: JSON.stringify({ message: txt }),
+                          });
+                          const res = await apiRequest<{ messages: ChatMsg[] }>(
+                            `/admin/chats/${adminActiveUserId}`
+                          );
+                          setAdminChatMsgs(res.messages || []);
+                          await loadAdminData(adminFilter);
+                        }}
+                      >
+                        <input
+                          className="input"
+                          placeholder="Tulis balasan admin…"
+                          value={adminReplyInput}
+                          onChange={(e) => setAdminReplyInput(e.target.value)}
+                        />
+                        <button type="submit" className="btn btn-sm">
+                          Balas
+                        </button>
+                      </form>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </main>
 
-      {/* CHAT SUPPORT (TEXT ONLY, NO ICONS) */}
-      {!chatOpen && (
+      {/* CHAT SUPPORT (USER ONLY) */}
+      {role !== "admin" && !chatOpen && (
         <button
           type="button"
           className="chat-toggle"
@@ -1569,8 +2562,8 @@ export default function AppWorkspace() {
 
           <div className="chat-msgs">
             {chatMsgs.map((m, i) => (
-              <div key={i} className={`bubble ${m.sender}`}>
-                {m.text}
+              <div key={m.id || i} className={`bubble ${m.sender}`}>
+                {m.message}
               </div>
             ))}
           </div>

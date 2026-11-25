@@ -32,6 +32,12 @@ func AuthRequired(c *fiber.Ctx) error {
 		})
 	}
 
+	if database.DB == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "Database tidak tersedia",
+		})
+	}
+
 	var user models.User
 	if err := database.DB.First(&user, claims.UserID).Error; err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
@@ -40,5 +46,15 @@ func AuthRequired(c *fiber.Ctx) error {
 	}
 
 	c.Locals("user", &user)
+	return c.Next()
+}
+
+func AdminRequired(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*models.User)
+	if !ok || user == nil || user.Role != "admin" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "Akses ditolak. Khusus Admin.",
+		})
+	}
 	return c.Next()
 }

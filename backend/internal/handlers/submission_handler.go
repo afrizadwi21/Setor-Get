@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"math/rand"
 	"regexp"
 	"strings"
 	"time"
@@ -86,59 +85,13 @@ func SubmitGmail(c *fiber.Ctx) error {
 	database.DB.Create(&models.Notification{
 		UserID:  user.ID,
 		Title:   "Setor Gmail",
-		Message: email + " diterima untuk dicek.",
+		Message: email + " diterima untuk dicek admin.",
 	})
-
-	// Background verification simulation (transitions: pend -> chk -> ok/bad)
-	go processVerificationSimulation(submission.ID, user.ID, email)
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"message": email + " berhasil disetor dan sedang dalam antrean verifikasi.",
+		"message": email + " berhasil disetor dan menunggu pengecekan admin.",
 		"data":    submission,
 	})
-}
-
-func processVerificationSimulation(subID uint, userID uint, email string) {
-	time.Sleep(2 * time.Second)
-	// Update to checking
-	database.DB.Model(&models.Submission{}).Where("id = ?", subID).Update("status", models.StatusChecking)
-	database.DB.Create(&models.Notification{
-		UserID:  userID,
-		Title:   "Pengecekan Akun",
-		Message: email + " sedang dicek.",
-	})
-
-	time.Sleep(3 * time.Second)
-	// Simulate check outcome: ~75% chance accepted
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	isAccepted := rng.Float64() > 0.25
-
-	if isAccepted {
-		database.DB.Model(&models.Submission{}).Where("id = ?", subID).Update("status", models.StatusAccepted)
-
-		// Increment user balance
-		database.DB.Model(&models.User{}).Where("id = ?", userID).Update("balance", database.DB.Raw("balance + ?", 2500))
-
-		database.DB.Create(&models.Notification{
-			UserID:  userID,
-			Title:   "Gmail Lolos Verifikasi",
-			Message: fmt.Sprintf("%s lolos. Saldo +Rp2.500", email),
-		})
-
-		// Check if this fulfills referrer's milestone
-		checkReferralMilestone(userID)
-	} else {
-		database.DB.Model(&models.Submission{}).Where("id = ?", subID).Updates(map[string]interface{}{
-			"status": models.StatusRejected,
-			"reason": "Akun tidak aktif atau kata sandi tidak valid saat dicek.",
-		})
-
-		database.DB.Create(&models.Notification{
-			UserID:  userID,
-			Title:   "Gmail Ditolak",
-			Message: fmt.Sprintf("%s ditolak: akun tidak aktif.", email),
-		})
-	}
 }
 
 func checkReferralMilestone(referredUserID uint) {
