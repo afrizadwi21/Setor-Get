@@ -1,168 +1,122 @@
 ---
-name: Setor-Get Design System
-description: Normative tokens and design guidelines for Setor-Get micro-tasking interface
+name: Setor-Get Print Design System
+description: Two-ink risograph/print design system for Setor Gmail, adapted from Impeccable reference 3ea433fd2cf4f718
 colors:
-  primary: "#0f6b57"
-  primary-hover: "#0b5242"
-  primary-ink: "#ffffff"
-  background: "#f3f6f4"
-  card: "#ffffff"
-  ink: "#14231f"
-  mute: "#5d706a"
-  line: "#dbe4e0"
-  gold: "#b7791f"
-  ok: "#1b7f4b"
-  ok-bg: "#e2f4ea"
-  warn: "#a15c07"
-  warn-bg: "#fdf0d8"
-  bad: "#b42318"
-  bad-bg: "#fde7e4"
-  info: "#1d5fa8"
-  info-bg: "#e2edf9"
-  dark-background: "#0e1a17"
-  dark-card: "#162621"
-  dark-ink: "#e6f0ec"
-  dark-mute: "#93a8a1"
-  dark-line: "#27403a"
-  dark-primary: "#3fbf9f"
-  dark-primary-ink: "#06211a"
+  paper: "#f4efdc"
+  field: "#fbf8ec"
+  ink: "#234584"
+  deep: "#15213a"
+  muted: "#4a5a7a"
+  blue: "#315bb3"
+  on-blue: "#f4efdc"
+  pink: "#e45b81"
+  on-pink: "#15213a"
+  rose: "#f3d6d7"
+  purple: "#65466d"
+  line: "#a6afbc"
+  ok: "#22663f"
+  ok-bg: "#d9e8d2"
+  warn: "#7a4f00"
+  warn-bg: "#f6e2b0"
+  bad: "#a8274d"
+  bad-bg: "#f3d6d7"
+  info: "#234584"
+  info-bg: "#dbe3f2"
+  dark-paper: "#131d33"
+  dark-field: "#0e1628"
+  dark-ink: "#e9e2c8"
+  dark-blue: "#9db8f2"
+  dark-rose: "#3a2236"
+  dark-purple: "#c9a9d0"
 typography:
   display:
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    fontSize: "2.5rem"
+    fontFamily: '"Barlow Condensed", "Arial Narrow", sans-serif'
+    fontSize: "4rem"
     fontWeight: 800
-    lineHeight: 1.1
-    letterSpacing: "-0.025em"
-  heading:
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    fontSize: "1.25rem"
-    fontWeight: 700
-    lineHeight: 1.25
+    lineHeight: 1
     letterSpacing: "-0.015em"
   body:
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    fontSize: "0.9375rem"
+    fontFamily: '"Figtree", system-ui, sans-serif'
+    fontSize: "1rem"
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 1.6
     letterSpacing: "0em"
-  mono:
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
-    fontSize: "0.875rem"
-    fontWeight: 500
-    lineHeight: 1.4
-    letterSpacing: "0.02em"
+  reading:
+    fontFamily: '"Literata", Georgia, serif'
+    fontSize: "1.0625rem"
+    fontWeight: 400
+    lineHeight: 1.7
+    letterSpacing: "0em"
 rounded:
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
-  xl: "18px"
-  full: "9999px"
+  none: "0px"
+  stamp: "2px"
+  control: "4px"
 spacing:
-  xs: "4px"
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
-  xl: "24px"
-  2xl: "32px"
+  xs: "8px"
+  sm: "16px"
+  md: "24px"
+  lg: "40px"
+  xl: "64px"
 components:
   button-primary:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.primary-ink}"
-    rounded: "{rounded.md}"
-    padding: "10px 18px"
-  button-ghost:
+    backgroundColor: "{colors.blue}"
+    textColor: "{colors.on-blue}"
+    rounded: "{rounded.control}"
+    padding: "12px 24px"
+  button-line:
     backgroundColor: "transparent"
     textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    padding: "10px 18px"
-  card:
-    backgroundColor: "{colors.card}"
-    rounded: "{rounded.lg}"
-    padding: "16px"
+    rounded: "{rounded.control}"
+    padding: "10px 16px"
 ---
 
 # Setor-Get Design System
 
 ## Overview
 
-Setor-Get is a high-utility, financial-microtasking web platform where trust, speed, and numerical clarity are paramount. The visual language rejects gratuitous AI decoration, neon glows, and ungrounded glassmorphism in favor of a calm, botanical emerald palette (`#0f6b57`) paired with clean surface elevations, tactile touch targets, and high-contrast status feedback.
+Setor Gmail uses a two-ink print and editorial ledger aesthetic inspired by Impeccable gallery specimen `3ea433fd2cf4f718`. Instead of rounded SaaS cards and decorative icon tiles, structure is established through hairline horizontal/vertical rules (`1px solid var(--ink)` / `var(--line)`), bold uppercase condensed display headings with pink overprint registration, and flat color fields (`--rose`, `--blue`, `--pink`). **Zero icons** (no SVGs, no emojis) are used across the entire UI.
 
 ## Colors
 
-The palette is rooted in fiscal reassurance and calm efficiency:
-
-- **Primary (`#0f6b57`)**: Pine/emerald green used for core actions, the main hero balance card, and focused states.
-- **Background (`#f3f6f4` / Dark: `#0e1a17`)**: Soft, desaturated mineral canvas that prevents eye fatigue during intensive task sessions.
-- **Card Surface (`#ffffff` / Dark: `#162621`)**: Pure white cards bounded by a subtle border (`#dbe4e0` / Dark: `#27403a`).
-- **Typography Ink (`#14231f` / Dark: `#e6f0ec`)**: Deep evergreen charcoal, guaranteeing WCAG AAA contrast for body copy.
-- **Muted Text (`#5d706a` / Dark: `#93a8a1`)**: Clear secondary tone for metadata, timestamps, and input labels.
-- **Semantic Badges**:
-  - `ok`: Forest green `#1b7f4b` on soft mint `#e2f4ea` (Diterima / Lolos).
-  - `warn`: Amber ochre `#a15c07` on sand `#fdf0d8` (Pending).
-  - `bad`: Brick crimson `#b42318` on soft blush `#fde7e4` (Ditolak / Invalid).
-  - `info`: Slate navy `#1d5fa8` on ice blue `#e2edf9` (Di cek / System notes).
-  - `gold`: Warm gold `#b7791f` for chat trigger and referral incentives.
+- **Paper (`#f4efdc` / Dark: `#131d33`)**: Warm print paper surface.
+- **Ink (`#234584` / Dark: `#e9e2c8`)**: Deep cobalt print ink for body copy, rules, and headings.
+- **Blue (`#315bb3`) & Pink (`#e45b81`)**: Primary action ink and overprint/highlight ink.
+- **Rose (`#f3d6d7` / Dark: `#3a2236`)**: Secondary stage fill for interactive work panels, login frame, and referral bands.
+- **Semantic Stamps**: `ok` (`#22663f` on `#d9e8d2`), `pend` (`#7a4f00` on `#f6e2b0`), `bad` (`#a8274d` on `#f3d6d7`), `chk` (`#234584` on `#dbe3f2`).
 
 ## Typography
 
-System-native sans fonts maximize load performance and render legibly on lower-end Android and mobile displays.
-
-- **Display Numbers (`2.5rem` / `40px`, Weight `800`, tracking `-0.025em`)**: Reserved exclusively for the central balance figure (`Rp25.000`) and key metric counters.
-- **Headings (`1.25rem` / `20px`, Weight `700`, tracking `-0.015em`)**: Clean section titles without excessive uppercase transformation.
-- **Body (`0.9375rem` / `15px`, Line-height `1.5`)**: Readable prose and form inputs.
-- **Monospace**: Clean monospace for referral codes, bank/e-wallet numbers, and email format rules.
+- **Display (`Barlow Condensed`, 800, uppercase)**: Masthead brand, hero statements, section titles, and ledger figures with `tabular-nums`.
+- **Body (`Figtree`, 400–700)**: Navigation, labels, forms, and UI controls.
+- **Reading (`Literata`, 400–500)**: Slip subcopy, rate statements, and referral codes.
 
 ## Layout
 
-- **Container Constraint**: Fixed max-width of `760px` centered with auto margins, ideal for single-column mobile viewports and comfortable centered desktop presentation.
-- **Bottom Navigation**: Floating dock navigation anchored at the bottom with safe-area inset accommodation (`env(safe-area-inset-bottom, 0px)`), with max-width `520px` to prevent stretching on desktop.
-- **Grid Systems**:
-  - Metric counters: 4-column grid on desktop (`repeat(4, 1fr)`), automatically folding to 2 columns on mobile screens (`repeat(2, 1fr)`).
-  - Action buttons: Flex wrap with unified `8px` spacing gap.
+- **Landing (`/`)**: Editorial flow with Masthead, Hero + interactive `HeroSlip`, Promise strip, Intro, 4-column status flow + sample ledger, Saldo & Referral split, FAQ Terms (`<details>`), Closing band, and Footer.
+- **App Workspace (`/app`)**: Login view and 6-tab workspace (`Beranda`, `Riwayat`, `Stor`, `Checker`, `Saldo`, `Profil`) plus `Referral`, `Leaderboard`, `Syarat & Ketentuan`, and text-only `Chat admin`. On mobile (`<=760px`), tabs dock cleanly to the bottom edge.
 
 ## Elevation & Depth
 
-- Elevation is achieved primarily through thin, crisp structural borders (`1px solid var(--line)`), avoiding heavy synthetic drop shadows.
-- Dynamic floating components (dock navigation, modal notifications, chat pane) utilize soft diffused shadows:
-  - Floating Dock: `0 8px 24px rgba(0, 0, 0, 0.12)`
-  - Dropdown Notification: `0 12px 30px rgba(0, 0, 0, 0.16)`
-  - Chat Window: `0 14px 34px rgba(0, 0, 0, 0.24)`
+- Flat print layers separated by `1px` rules and background color shifts (`--paper` vs `--rose` vs `--blue`).
+- Only floating overlays (`.notif-panel`, `.chat-toggle`, `.chat-panel`) use subtle drop shadows.
 
 ## Shapes
 
-- **Surface Cards**: `16px` border-radius (`rounded-2xl`) with internal padding of `16px`.
-- **Buttons & Form Fields**: `12px` border-radius (`rounded-xl`) with `10px 16px` touch padding.
-- **Badges & Pills**: Full capsule border-radius (`9999px`) with `2px 10px` compact padding.
-- **Progress Bars**: Encapsulated bar (`8px` height, `9999px` radius) with smooth width transitions.
+- Sharp, print-authentic corners: `4px` on buttons and inputs, `2px` on status stamps, `0px` on structural panels and tables.
 
 ## Components
 
-### 1. Hero Balance Card (`.bal`)
-The single boldest visual anchor in the app. Deep pine green background with pure white typography, containing current balance, unit rate statement, and instant action buttons (Tarik saldo, Riwayat).
-
-### 2. Status Metric Tile
-Individual compact cards showcasing a bold stat value above a semantic status pill.
-
-### 3. Submission Form
-Clean vertical flow with immediate validation checklists:
-- Prefix and domain check
-- Minimum password length check
-- Duplicate submission check
-Clear visual color cues (green checkmark / red alert) updating on every keystroke.
-
-### 4. Interactive Bottom Dock
-A unified pill-dock with icon and label pairs for Beranda, Riwayat, Stor, Checker, Saldo, and Profil, with clear active tab highlighting.
+- **HeroSlip**: Interactive format-checking slip on the landing page with live rule feedback.
+- **Ledger & Rules**: Hairline-divided lists (`.ledger-list`, `.rules`, `.ledger`) replacing nested cards.
+- **Status Stamps (`.tag`)**: Compact, high-contrast rectangular stamps (`Pending`, `Di cek`, `Diterima`, `Ditolak`).
 
 ## Do's and Don'ts
 
 ### Do
-- Keep numbers crisp, prominent, and formatted with Indonesian currency standards (`Rp2.500`, `Rp25.000`).
-- Use genuine status pills with paired background and text hues for immediate scanability.
-- Maintain a single visual container width (`760px`) to preserve task focus.
-- Ensure all interactive elements have visible `:focus-visible` outlines in primary green.
+- Keep the interface 100% icon-free (rely on clear Indonesian copy, typography, and hairline rules).
+- Use `tabular-nums` on all currency and counter figures.
+- Maintain WCAG AA contrast across both light and dark modes.
 
 ### Don't
-- Do not introduce purple-to-blue gradient cards or neon borders.
-- Do not nest cards within cards more than one level deep.
-- Do not let modal or chat dialogs obscure primary navigation without an explicit dismiss button.
-- Do not use arbitrary custom padding when standard spacing tokens (`8px`, `12px`, `16px`, `24px`) suffice.
+- Do not add SVG icons, icon tiles, or emoji glyphs to buttons, tabs, or headings.
+- Do not wrap every section in rounded shadow cards; use hairline dividers and flat `--rose` / `--blue` stages.

@@ -21,6 +21,12 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+type GoogleLoginRequest struct {
+	Email  string `json:"email"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar"`
+}
+
 func Register(c *fiber.Ctx) error {
 	var req RegisterRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -155,6 +161,57 @@ func Login(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"message": "Login berhasil",
+		"token":   token,
+		"user":    user,
+	})
+}
+
+func GoogleLogin(c *fiber.Ctx) error {
+	var req GoogleLoginRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid payload format",
+		})
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" || !strings.Contains(email, "@") {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Email Google tidak valid",
+		})
+	}
+
+	username := strings.Split(email, "@")[0]
+	if req.Name != "" {
+		username = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(req.Name)), " ", "_")
+	}
+
+	var user models.User
+	if err := database.DB.Where("LOWER(username) = LOWER(?)", username).First(&user).Error; err != nil {
+		randomPass, _ := utils.HashPassword(utils.GenerateRandomCode(16))
+		user = models.User{
+			Username:     username,
+			PasswordHash: randomPass,
+			Avatar:       req.Avatar,
+			ReferralCode: strings.ToUpper(utils.GenerateRandomCode(8)),
+			DailyLimit:   20,
+		}
+		if err := database.DB.Create(&user).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Gagal membuat akun Google",
+			})
+		}
+	}
+
+	token, err := utils.GenerateToken(user.ID, user.Username)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Gagal membuat sesi login",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Login Google berhasil",
 		"token":   token,
 		"user":    user,
 	})

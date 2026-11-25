@@ -17,6 +17,7 @@ func SetupRoutes(app *fiber.App) {
 	auth := api.Group("/auth")
 	auth.Post("/register", handlers.Register)
 	auth.Post("/login", handlers.Login)
+	auth.Post("/google", handlers.GoogleLogin)
 
 	// Checker (Public or Protected)
 	api.Post("/checker", handlers.CheckEmails)

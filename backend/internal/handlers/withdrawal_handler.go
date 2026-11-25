@@ -42,10 +42,10 @@ func RequestWithdrawal(c *fiber.Ctx) error {
 		amount = user.Balance
 	}
 
-	const minWithdrawal = 25000
+	const minWithdrawal = 5000
 	if user.Balance < minWithdrawal || amount < minWithdrawal {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Saldo minimal Rp25.000 untuk melakukan penarikan.",
+			"error": "Saldo minimal Rp5.000 untuk melakukan penarikan.",
 		})
 	}
 
