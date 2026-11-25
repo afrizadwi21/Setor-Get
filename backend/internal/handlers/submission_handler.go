@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,5 +145,91 @@ func GetSubmissions(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"data": items,
+	})
+}
+
+func UpdateMySubmission(c *fiber.Ctx) error {
+	user := c.Locals("user").(*models.User)
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
+	}
+
+	var sub models.Submission
+	if err := database.DB.Where("id = ? AND user_id = ?", id, user.ID).First(&sub).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Setoran tidak ditemukan"})
+	}
+
+	if sub.Status != models.StatusPending {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Hanya setoran berstatus Pending yang dapat diedit.",
+		})
+	}
+
+	var req SubmitGmailRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format input tidak valid"})
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	pass := strings.TrimSpace(req.Password)
+
+	if !emailRegex.MatchString(email) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Email harus diawali “get” dan berakhiran @gmail.com.",
+		})
+	}
+
+	var existing models.Submission
+	if err := database.DB.Where("LOWER(email) = ? AND id <> ?", email, sub.ID).First(&existing).Error; err == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Email sudah pernah disetor sebelumnya.",
+		})
+	}
+
+	sub.Email = email
+	if pass != "" {
+		if len(pass) < 8 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Kata sandi email minimal 8 karakter.",
+			})
+		}
+		sub.EmailPass = pass
+	}
+
+	if err := database.DB.Save(&sub).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal memperbarui setoran"})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Setoran berhasil diperbarui",
+		"data":    sub,
+	})
+}
+
+func DeleteMySubmission(c *fiber.Ctx) error {
+	user := c.Locals("user").(*models.User)
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
+	}
+
+	var sub models.Submission
+	if err := database.DB.Where("id = ? AND user_id = ?", id, user.ID).First(&sub).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Setoran tidak ditemukan"})
+	}
+
+	if sub.Status != models.StatusPending {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Hanya setoran berstatus Pending yang dapat dihapus.",
+		})
+	}
+
+	if err := database.DB.Delete(&sub).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus setoran"})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Setoran berhasil dihapus",
 	})
 }

@@ -225,6 +225,10 @@ export default function AppWorkspace() {
   const [storPass, setStorPass] = useState("");
   const [storErr, setStorErr] = useState("");
   const [storBusy, setStorBusy] = useState(false);
+  const [editingSubId, setEditingSubId] = useState<number | null>(null);
+  const [editSubEmail, setEditSubEmail] = useState("");
+  const [editSubPass, setEditSubPass] = useState("");
+  const [editSubErr, setEditSubErr] = useState("");
 
   const [checkRaw, setCheckRaw] = useState("");
   const [checkBusy, setCheckBusy] = useState(false);
@@ -279,6 +283,7 @@ export default function AppWorkspace() {
   const [adminEditMap, setAdminEditMap] = useState<Record<number, { email: string; email_pass: string }>>({});
   const [adminNewEmail, setAdminNewEmail] = useState("");
   const [adminNewPass, setAdminNewPass] = useState("");
+  const [adminNoteSentId, setAdminNoteSentId] = useState<number | null>(null);
   const [adminThreads, setAdminThreads] = useState<AdminChatThread[]>([]);
   const [adminActiveUserId, setAdminActiveUserId] = useState<number | null>(null);
   const [adminChatMsgs, setAdminChatMsgs] = useState<ChatMsg[]>([]);
@@ -1182,6 +1187,11 @@ export default function AppWorkspace() {
             </p>
 
             <div style={{ marginTop: 32 }}>
+              {editSubErr && (
+                <p className="msg msg-bad" style={{ marginBottom: 14 }}>
+                  {editSubErr}
+                </p>
+              )}
               {items.length === 0 ? (
                 <p className="empty">
                   Belum ada setoran. Mulai dari menu Stor.
@@ -1190,17 +1200,148 @@ export default function AppWorkspace() {
                 <ul className="ledger-list">
                   {items.map((it) => {
                     const m = STATUS_META[it.status] || STATUS_META.pend;
+                    const isEditing = editingSubId === it.id;
                     return (
-                      <li key={it.id}>
-                        <div className="em">
-                          {it.email}
-                          <small>
-                            {formatTime(it.created_at)}
-                            {it.status === "ok" ? ` · +${rp(PRICE)}` : ""}
-                            {it.reason ? ` · ${it.reason}` : ""}
-                          </small>
+                      <li
+                        key={it.id}
+                        style={{
+                          flexDirection: "column",
+                          alignItems: "stretch",
+                          gap: 10,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 12,
+                          }}
+                        >
+                          <div className="em">
+                            {it.email}
+                            <small>
+                              {formatTime(it.created_at)}
+                              {it.status === "ok" ? ` · +${rp(PRICE)}` : ""}
+                              {it.reason ? ` · Catatan: ${it.reason}` : ""}
+                            </small>
+                          </div>
+                          <span className={`tag ${m.cls}`}>{m.label}</span>
                         </div>
-                        <span className={`tag ${m.cls}`}>{m.label}</span>
+
+                        {it.status === "pend" && !isEditing && (
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button
+                              type="button"
+                              className="btn btn-line btn-sm"
+                              style={{ minHeight: 36, padding: "4px 12px" }}
+                              onClick={() => {
+                                setEditingSubId(it.id);
+                                setEditSubEmail(it.email);
+                                setEditSubPass("");
+                                setEditSubErr("");
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-line btn-sm"
+                              style={{
+                                minHeight: 36,
+                                padding: "4px 12px",
+                                borderColor: "var(--bad)",
+                                color: "var(--bad)",
+                              }}
+                              onClick={async () => {
+                                setEditSubErr("");
+                                try {
+                                  await apiRequest(`/submissions/${it.id}`, {
+                                    method: "DELETE",
+                                  });
+                                  await hydrateAll();
+                                } catch (err) {
+                                  setEditSubErr(
+                                    err instanceof Error
+                                      ? err.message
+                                      : "Gagal menghapus setoran."
+                                  );
+                                }
+                              }}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        )}
+
+                        {isEditing && (
+                          <form
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 8,
+                              padding: 12,
+                              background: "var(--rose)",
+                            }}
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              setEditSubErr("");
+                              try {
+                                await apiRequest(`/submissions/${it.id}`, {
+                                  method: "PUT",
+                                  body: JSON.stringify({
+                                    email: editSubEmail,
+                                    password: editSubPass,
+                                  }),
+                                });
+                                setEditingSubId(null);
+                                setEditSubPass("");
+                                await hydrateAll();
+                              } catch (err) {
+                                setEditSubErr(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "Gagal memperbarui setoran."
+                                );
+                              }
+                            }}
+                          >
+                            <input
+                              className="input"
+                              style={{ flex: "1 1 200px", minHeight: 40 }}
+                              type="email"
+                              placeholder="getnama123@gmail.com"
+                              value={editSubEmail}
+                              onChange={(e) => setEditSubEmail(e.target.value)}
+                            />
+                            <input
+                              className="input"
+                              style={{ flex: "1 1 160px", minHeight: 40 }}
+                              type="text"
+                              placeholder="Kata sandi baru (opsional)"
+                              value={editSubPass}
+                              onChange={(e) => setEditSubPass(e.target.value)}
+                            />
+                            <button
+                              type="submit"
+                              className="btn btn-sm"
+                              style={{ minHeight: 40 }}
+                            >
+                              Simpan
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-line btn-sm"
+                              style={{ minHeight: 40 }}
+                              onClick={() => {
+                                setEditingSubId(null);
+                                setEditSubErr("");
+                              }}
+                            >
+                              Batal
+                            </button>
+                          </form>
+                        )}
                       </li>
                     );
                   })}
@@ -2207,7 +2348,7 @@ export default function AppWorkspace() {
                             <input
                               className="input"
                               style={{ flex: "1 1 180px", minHeight: 40, padding: "6px 10px", fontSize: 13 }}
-                              placeholder="Alasan penolakan (opsional)"
+                              placeholder="Catatan / alasan untuk user (mis. PW salah)…"
                               value={adminReasonMap[s.id] ?? s.reason ?? ""}
                               onChange={(e) =>
                                 setAdminReasonMap((prev) => ({
@@ -2216,6 +2357,24 @@ export default function AppWorkspace() {
                                 }))
                               }
                             />
+                            <button
+                              type="button"
+                              className="btn btn-line btn-sm"
+                              style={{ minHeight: 40 }}
+                              onClick={async () => {
+                                const note = (adminReasonMap[s.id] ?? s.reason ?? "").trim();
+                                if (!note) return;
+                                await apiRequest(`/admin/submissions/${s.id}/note`, {
+                                  method: "POST",
+                                  body: JSON.stringify({ note }),
+                                });
+                                setAdminNoteSentId(s.id);
+                                setTimeout(() => setAdminNoteSentId(null), 2000);
+                                await loadAdminData(adminFilter, adminWdFilter);
+                              }}
+                            >
+                              {adminNoteSentId === s.id ? "Terkirim!" : "Kirim Catatan"}
+                            </button>
                             <button
                               type="button"
                               className="btn btn-line btn-sm"

@@ -465,3 +465,43 @@ func AdminUpdateWithdrawalStatus(c *fiber.Ctx) error {
 		"data":    wd,
 	})
 }
+
+type AdminNoteRequest struct {
+	Note string `json:"note"`
+}
+
+func AdminSendSubmissionNote(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
+	}
+
+	var req AdminNoteRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Payload tidak valid"})
+	}
+
+	note := strings.TrimSpace(req.Note)
+	if note == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Catatan tidak boleh kosong"})
+	}
+
+	var sub models.Submission
+	if err := database.DB.First(&sub, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Setoran tidak ditemukan"})
+	}
+
+	sub.Reason = note
+	database.DB.Save(&sub)
+
+	database.DB.Create(&models.Notification{
+		UserID:  sub.UserID,
+		Title:   "Catatan Admin",
+		Message: fmt.Sprintf("Catatan untuk %s: %s", sub.Email, note),
+	})
+
+	return c.JSON(fiber.Map{
+		"message": "Catatan berhasil dikirim ke notifikasi user",
+		"data":    sub,
+	})
+}

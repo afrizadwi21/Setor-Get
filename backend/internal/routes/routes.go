@@ -39,6 +39,8 @@ func SetupRoutes(app *fiber.App) {
 	// Submissions (Setor Gmail & Riwayat)
 	protected.Post("/submissions", handlers.SubmitGmail)
 	protected.Get("/submissions", handlers.GetSubmissions)
+	protected.Put("/submissions/:id", handlers.UpdateMySubmission)
+	protected.Delete("/submissions/:id", handlers.DeleteMySubmission)
 
 	// Withdrawals (Tarik Saldo)
 	protected.Post("/withdrawals", handlers.RequestWithdrawal)
@@ -65,6 +67,7 @@ func SetupRoutes(app *fiber.App) {
 	admin.Put("/submissions/:id", handlers.AdminUpdateSubmission)
 	admin.Delete("/submissions/:id", handlers.AdminDeleteSubmission)
 	admin.Put("/submissions/:id/status", handlers.AdminUpdateSubmissionStatus)
+	admin.Post("/submissions/:id/note", handlers.AdminSendSubmissionNote)
 	admin.Get("/submissions/export", handlers.AdminExportSubmissionsCSV)
 	admin.Get("/chats", handlers.AdminGetChats)
 	admin.Get("/chats/:userId", handlers.AdminGetUserChat)
